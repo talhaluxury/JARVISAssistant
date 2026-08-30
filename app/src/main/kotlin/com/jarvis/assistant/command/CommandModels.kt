@@ -1,5 +1,7 @@
 package com.jarvis.assistant.command
 
+import com.jarvis.assistant.accessibility.AutomationStep
+
 /** The closed set of actions the app is willing to execute. Nothing else runs, ever. */
 sealed class JarvisCommand {
     data class OpenApp(val target: String) : JarvisCommand()
@@ -17,6 +19,18 @@ sealed class JarvisCommand {
     data class ShareText(val text: String) : JarvisCommand()
     data class AdjustVolume(val directionUp: Boolean, val stream: String) : JarvisCommand()
     data class Remember(val content: String) : JarvisCommand()
+
+    /**
+     * Full on-screen automation inside any app: launches [packageName] (if given) then
+     * carries out [steps] one at a time using the Accessibility Service — tapping visible
+     * buttons/text, typing into visible fields, going back, scrolling. This is the most
+     * powerful command JARVIS has, so it always requires the user's explicit confirmation,
+     * and it silently does nothing if the user hasn't turned the Accessibility Service on.
+     */
+    data class Automate(val packageName: String?, val steps: List<AutomationStep>) : JarvisCommand()
+
+    /** Sends the user to the system screen where they can turn the Accessibility Service on. */
+    object EnablePhoneControl : JarvisCommand()
 }
 
 /** Whether a command needs an explicit "yes, do it" from the user before executing. */
@@ -30,12 +44,14 @@ fun JarvisCommand.requiresConfirmation(): Boolean = when (this) {
     JarvisCommand.OpenCalendar,
     JarvisCommand.OpenClock,
     is JarvisCommand.AdjustVolume,
-    is JarvisCommand.Remember -> false
+    is JarvisCommand.Remember,
+    JarvisCommand.EnablePhoneControl -> false
     is JarvisCommand.OpenDialer,
     is JarvisCommand.SetAlarm,
     is JarvisCommand.SetTimer,
     is JarvisCommand.CreateReminder,
-    is JarvisCommand.ShareText -> true
+    is JarvisCommand.ShareText,
+    is JarvisCommand.Automate -> true
 }
 
 fun JarvisCommand.describe(): String = when (this) {
@@ -54,4 +70,6 @@ fun JarvisCommand.describe(): String = when (this) {
     is JarvisCommand.ShareText -> "Share this text?"
     is JarvisCommand.AdjustVolume -> "Turn $stream volume ${if (directionUp) "up" else "down"}?"
     is JarvisCommand.Remember -> "Remembered."
+    is JarvisCommand.Automate -> "Perform ${steps.size} action(s)${packageName?.let { " in $it" } ?: ""}?"
+    JarvisCommand.EnablePhoneControl -> "Open Accessibility settings to turn on phone control?"
 }

@@ -11,6 +11,7 @@ import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 
 sealed class ExecutionResult {
     data class Success(val message: String) : ExecutionResult()
@@ -18,7 +19,8 @@ sealed class ExecutionResult {
 }
 
 /**
- * Executes a JarvisCommand using ONLY documented, public Android APIs/Intents.
+ * Executes a JarvisCommand using ONLY documented, public Android APIs/Intents,
+ * plus (for Automate) the Accessibility Service the user explicitly turned on.
  * No hidden APIs, no security bypasses, no silent background control of the
  * device — every action here is exactly what a user could trigger by tapping
  * through the system UI themselves.
@@ -42,6 +44,8 @@ class AndroidActionExecutor(private val context: Context) {
             is JarvisCommand.ShareText -> shareText(command.text)
             is JarvisCommand.AdjustVolume -> adjustVolume(command)
             is JarvisCommand.Remember -> ExecutionResult.Success("Remembered.")
+            JarvisCommand.EnablePhoneControl -> openAccessibilitySettings()
+            is JarvisCommand.Automate -> runAutomation(command)
         }
     } catch (e: ActivityNotFoundException) {
         ExecutionResult.Failure("No app found to handle that action.")
@@ -143,5 +147,22 @@ class AndroidActionExecutor(private val context: Context) {
         val direction = if (command.directionUp) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
         am.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI)
         return ExecutionResult.Success("Volume adjusted.")
+    }
+
+    private fun openAccessibilitySettings(): ExecutionResult =
+        launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+
+    private fun runAutomation(command: JarvisCommand.Automate): ExecutionResult {
+        if (!JarvisAccessibilityService.isEnabled) {
+            openAccessibilitySettings()
+            return ExecutionResult.Failure(
+                "Phone control isn't turned on yet. Find JARVIS in the Accessibility list and switch it on, then try again."
+            )
+        }
+        command.packageName?.let { pkg ->
+            context.packageManager.getLaunchIntentForPackage(pkg)?.let { launch(it) }
+        }
+        JarvisAccessibilityService.enqueue(command.steps)
+        return ExecutionResult.Success("Working on it.")
     }
 }

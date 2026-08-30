@@ -1,5 +1,6 @@
 package com.jarvis.assistant.command
 
+import com.jarvis.assistant.accessibility.AutomationStep
 import org.json.JSONObject
 
 /**
@@ -69,10 +70,39 @@ object CommandEngine {
                 "REMEMBER" -> json.optString("content").takeIf { it.isNotBlank() }
                     ?.let { JarvisCommand.Remember(it) }
 
+                "ENABLE_PHONE_CONTROL" -> JarvisCommand.EnablePhoneControl
+
+                "AUTOMATE" -> parseAutomate(json)
+
                 else -> null
             }
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun parseAutomate(json: JSONObject): JarvisCommand.Automate? {
+        val stepsArray = json.optJSONArray("steps") ?: return null
+        val steps = mutableListOf<AutomationStep>()
+        for (i in 0 until stepsArray.length()) {
+            val stepJson = stepsArray.optJSONObject(i) ?: continue
+            val step = when (stepJson.optString("action").lowercase()) {
+                "tap_text" -> stepJson.optString("value").takeIf { it.isNotBlank() }
+                    ?.let { AutomationStep.TapText(it) }
+                "tap_desc" -> stepJson.optString("value").takeIf { it.isNotBlank() }
+                    ?.let { AutomationStep.TapDescription(it) }
+                "type" -> stepJson.optString("value").takeIf { it.isNotBlank() }
+                    ?.let { AutomationStep.TypeText(it) }
+                "wait" -> AutomationStep.Wait(stepJson.optLong("value", 800L).coerceIn(100L, 5000L))
+                "back" -> AutomationStep.PressBack
+                "home" -> AutomationStep.PressHome
+                "scroll_forward" -> AutomationStep.ScrollForward
+                "scroll_backward" -> AutomationStep.ScrollBackward
+                else -> null
+            }
+            if (step != null) steps.add(step)
+        }
+        if (steps.isEmpty()) return null
+        return JarvisCommand.Automate(json.optString("package").takeIf { it.isNotBlank() }, steps)
     }
 }

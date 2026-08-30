@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,6 +36,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.assistant.ui.theme.JarvisSurfaceGlass
 import com.jarvis.assistant.ui.theme.JarvisTextSecondary
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemoryScreen(viewModel: MemoryViewModel = viewModel()) {
     val memories by viewModel.memories.collectAsState()
