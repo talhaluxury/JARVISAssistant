@@ -21,6 +21,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +32,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jarvis.assistant.ui.theme.JarvisCyan
+import com.jarvis.assistant.ui.theme.JarvisError
 import com.jarvis.assistant.ui.theme.JarvisTextSecondary
 
 private val languages = listOf("auto" to "Auto-detect", "en" to "English", "ur" to "Urdu", "ur-roman" to "Roman Urdu")
@@ -42,9 +45,17 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     var clearMemoryDialog by remember { mutableStateOf(false) }
     var clearHistoryDialog by remember { mutableStateOf(false) }
     var languageMenuExpanded by remember { mutableStateOf(false) }
+    var voiceMenuExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { viewModel.refreshStatus() }
 
     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         TopAppBar(title = { Text("Settings") })
+
+        SectionLabel("System Status")
+        StatusRow("AI Connection", state.aiConfigured)
+        StatusRow("Phone Control (Accessibility)", state.phoneControlEnabled)
+        StatusRow("Network", state.networkOnline)
 
         SectionLabel("AI Provider")
         OutlinedTextField(
@@ -95,6 +106,23 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             valueRange = 0.5f..2.0f,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
         )
+        Row(modifier = Modifier.padding(horizontal = 16.dp)) {
+            OutlinedButton(onClick = { voiceMenuExpanded = true }) {
+                Text(state.voices.firstOrNull { it.name == state.voiceName }?.displayLabel ?: "Select voice")
+            }
+            DropdownMenu(expanded = voiceMenuExpanded, onDismissRequest = { voiceMenuExpanded = false }) {
+                state.voices.forEach { voice ->
+                    DropdownMenuItem(text = { Text(voice.displayLabel) }, onClick = {
+                        viewModel.updateVoice(voice.name)
+                        voiceMenuExpanded = false
+                    })
+                }
+            }
+        }
+        OutlinedButton(
+            onClick = { viewModel.testVoice() },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+        ) { Text("Test voice") }
 
         SectionLabel("Language")
         Row(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -185,4 +213,19 @@ private fun SectionLabel(text: String) {
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp)
     )
+}
+
+@Composable
+private fun StatusRow(label: String, online: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            if (online) "ONLINE" else "OFFLINE",
+            color = if (online) JarvisCyan else JarvisError,
+            style = MaterialTheme.typography.labelMedium
+        )
+    }
 }

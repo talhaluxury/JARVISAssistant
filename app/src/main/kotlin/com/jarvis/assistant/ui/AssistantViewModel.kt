@@ -37,7 +37,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     private val _voiceState = MutableStateFlow(VoiceState.IDLE)
     val voiceState: StateFlow<VoiceState> = _voiceState.asStateFlow()
 
-    private val _statusText = MutableStateFlow("Ready")
+    private val _statusText = MutableStateFlow("SYSTEM READY")
     val statusText: StateFlow<String> = _statusText.asStateFlow()
 
     private val _lastResponse = MutableStateFlow("")
@@ -99,14 +99,14 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     fun startListening(languageTag: String?) {
         if (_voiceState.value == VoiceState.LISTENING) return
         _voiceState.value = VoiceState.LISTENING
-        _statusText.value = "Listening..."
+        _statusText.value = "LISTENING..."
 
         viewModelScope.launch {
             container.speechToTextManager.listen(languageTag).collectLatest { event ->
                 when (event) {
                     SpeechEvent.ListeningStarted -> {
                         _voiceState.value = VoiceState.LISTENING
-                        _statusText.value = "Listening..."
+                        _statusText.value = "LISTENING..."
                     }
                     SpeechEvent.ListeningEnded -> { /* result or error follows */ }
                     is SpeechEvent.PartialResult -> _statusText.value = event.text
@@ -115,7 +115,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                             sendMessage(event.text, speakReply = true)
                         } else {
                             _voiceState.value = VoiceState.IDLE
-                            _statusText.value = "Ready"
+                            _statusText.value = "SYSTEM READY"
                         }
                     }
                     is SpeechEvent.Error -> {
@@ -130,7 +130,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     fun cancelListening() {
         container.speechToTextManager.cancel()
         _voiceState.value = VoiceState.IDLE
-        _statusText.value = "Ready"
+        _statusText.value = "SYSTEM READY"
     }
 
     fun sendMessage(text: String, speakReply: Boolean) {
@@ -145,13 +145,13 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     "but I need internet to think through open-ended questions."
                 container.conversationRepository.addMessage(conversationId, "assistant", offlineReply)
                 _lastResponse.value = offlineReply
-                _statusText.value = "Offline mode"
+                _statusText.value = "NETWORK OFFLINE"
                 _voiceState.value = VoiceState.IDLE
                 return@launch
             }
 
             _voiceState.value = VoiceState.THINKING
-            _statusText.value = "Thinking..."
+            _statusText.value = "PROCESSING..."
 
             var searchContext = ""
             if (needsWebSearch(text)) {
@@ -170,19 +170,39 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 onSuccess = { result ->
                     container.conversationRepository.addMessage(conversationId, "assistant", result.replyText)
                     _lastResponse.value = result.replyText
-                    _statusText.value = "Ready"
+                    _statusText.value = "SYSTEM READY"
 
                     val command = CommandEngine.parse(result.commandJson)
-                    if (command != null) handleCommand(command)
-
-                    if (speakReply) speak(result.replyText) else _voiceState.value = VoiceState.IDLE
+                    when {
+                        command is JarvisCommand.ReadScreen -> {
+                            // A read-only command: what it "says" is whatever it finds on screen,
+                            // not the AI's filler reply, so speak/show that instead.
+                            _statusText.value = "READING SCREEN..."
+                            val screenResult = container.actionExecutor.execute(command)
+                            val screenText = when (screenResult) {
+                                is ExecutionResult.Success -> screenResult.message
+                                is ExecutionResult.Failure -> screenResult.message
+                            }
+                            container.conversationRepository.addMessage(conversationId, "assistant", screenText)
+                            _lastResponse.value = screenText
+                            _statusText.value = "SYSTEM READY"
+                            if (speakReply) speak(screenText) else _voiceState.value = VoiceState.IDLE
+                        }
+                        command != null -> {
+                            handleCommand(command)
+                            if (speakReply) speak(result.replyText) else _voiceState.value = VoiceState.IDLE
+                        }
+                        else -> {
+                            if (speakReply) speak(result.replyText) else _voiceState.value = VoiceState.IDLE
+                        }
+                    }
                 },
                 onFailure = { error ->
                     val message = "Sorry, something went wrong: ${error.message ?: "unknown error"}"
                     container.conversationRepository.addMessage(conversationId, "assistant", message)
                     _lastResponse.value = message
                     _voiceState.value = VoiceState.ERROR
-                    _statusText.value = "Something went wrong"
+                    _statusText.value = "SYSTEM ERROR"
                 }
             )
         }
@@ -205,7 +225,12 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         if (command.requiresConfirmation()) {
             _pendingCommand.value = PendingCommand(command, command.describe())
         } else {
-            container.actionExecutor.execute(command)
+            _statusText.value = "EXECUTING: ${command.describe().removeSuffix("?").uppercase()}"
+            val result = container.actionExecutor.execute(command)
+            _statusText.value = when (result) {
+                is ExecutionResult.Success -> "TASK COMPLETE"
+                is ExecutionResult.Failure -> result.message
+            }
         }
     }
 
@@ -213,10 +238,14 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         val pending = _pendingCommand.value ?: return
         _pendingCommand.value = null
         if (confirmed) {
+            _statusText.value = "EXECUTING: ${pending.command.describe().removeSuffix("?").uppercase()}"
             val result = container.actionExecutor.execute(pending.command)
-            if (result is ExecutionResult.Failure) {
-                _statusText.value = result.message
+            _statusText.value = when (result) {
+                is ExecutionResult.Success -> "TASK COMPLETE"
+                is ExecutionResult.Failure -> result.message
             }
+        } else {
+            _statusText.value = "SYSTEM READY"
         }
     }
 
@@ -227,11 +256,15 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     private suspend fun speak(text: String) {
         _voiceState.value = VoiceState.SPEAKING
-        _statusText.value = "Speaking..."
-        container.textToSpeechManager.setRate(container.securePrefs.speechRate)
+        _statusText.value = "RESPONDING..."
+        val prefs = container.securePrefs
+        container.textToSpeechManager.setRate(prefs.speechRate)
+        // Default to a male-sounding voice the first time, then remember whatever the user picks.
+        val voiceName = prefs.voiceName ?: container.textToSpeechManager.autoSelectMaleVoice()?.also { prefs.voiceName = it }
+        container.textToSpeechManager.setVoice(voiceName)
         container.textToSpeechManager.speak(text)
         _voiceState.value = VoiceState.IDLE
-        _statusText.value = "Ready"
+        _statusText.value = "SYSTEM READY"
     }
 
     override fun onCleared() {

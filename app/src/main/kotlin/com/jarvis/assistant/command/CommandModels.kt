@@ -20,6 +20,19 @@ sealed class JarvisCommand {
     data class AdjustVolume(val directionUp: Boolean, val stream: String) : JarvisCommand()
     data class Remember(val content: String) : JarvisCommand()
 
+    object GoHome : JarvisCommand()
+    object GoBack : JarvisCommand()
+    object OpenRecentApps : JarvisCommand()
+    object MediaPlayPause : JarvisCommand()
+    object MediaNext : JarvisCommand()
+    object MediaPrevious : JarvisCommand()
+
+    /** Reads the visible text on the current screen back, for verification or Q&A about it. */
+    object ReadScreen : JarvisCommand()
+
+    /** Saves generated text/code as a real file in the Downloads folder. */
+    data class SaveTextFile(val filename: String, val content: String) : JarvisCommand()
+
     /**
      * Full on-screen automation inside any app: launches [packageName] (if given) then
      * carries out [steps] one at a time using the Accessibility Service — tapping visible
@@ -45,12 +58,20 @@ fun JarvisCommand.requiresConfirmation(): Boolean = when (this) {
     JarvisCommand.OpenClock,
     is JarvisCommand.AdjustVolume,
     is JarvisCommand.Remember,
+    JarvisCommand.GoHome,
+    JarvisCommand.GoBack,
+    JarvisCommand.OpenRecentApps,
+    JarvisCommand.MediaPlayPause,
+    JarvisCommand.MediaNext,
+    JarvisCommand.MediaPrevious,
+    JarvisCommand.ReadScreen,
     JarvisCommand.EnablePhoneControl -> false
     is JarvisCommand.OpenDialer,
     is JarvisCommand.SetAlarm,
     is JarvisCommand.SetTimer,
     is JarvisCommand.CreateReminder,
     is JarvisCommand.ShareText,
+    is JarvisCommand.SaveTextFile,
     is JarvisCommand.Automate -> true
 }
 
@@ -72,4 +93,12 @@ fun JarvisCommand.describe(): String = when (this) {
     is JarvisCommand.Remember -> "Remembered."
     is JarvisCommand.Automate -> "Perform ${steps.size} action(s)${packageName?.let { " in $it" } ?: ""}?"
     JarvisCommand.EnablePhoneControl -> "Open Accessibility settings to turn on phone control?"
+    JarvisCommand.GoHome -> "Go to the home screen."
+    JarvisCommand.GoBack -> "Go back."
+    JarvisCommand.OpenRecentApps -> "Open recent apps."
+    JarvisCommand.MediaPlayPause -> "Play/pause media."
+    JarvisCommand.MediaNext -> "Skip to next track."
+    JarvisCommand.MediaPrevious -> "Go to previous track."
+    JarvisCommand.ReadScreen -> "Read what's on screen."
+    is JarvisCommand.SaveTextFile -> "Save \"$filename\" to Downloads?"
 }

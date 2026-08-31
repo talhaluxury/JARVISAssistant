@@ -11,8 +11,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.jarvis.assistant.navigation.JarvisNavGraph
+import com.jarvis.assistant.ui.screens.boot.BootScreen
 import com.jarvis.assistant.ui.theme.JarvisTheme
 
 class MainActivity : ComponentActivity() {
@@ -32,6 +37,7 @@ class MainActivity : ComponentActivity() {
 private fun JarvisApp() {
     val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    var bootComplete by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         micLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -40,5 +46,9 @@ private fun JarvisApp() {
         }
     }
 
-    JarvisNavGraph()
+    if (bootComplete) {
+        JarvisNavGraph()
+    } else {
+        BootScreen(onFinished = { bootComplete = true })
+    }
 }

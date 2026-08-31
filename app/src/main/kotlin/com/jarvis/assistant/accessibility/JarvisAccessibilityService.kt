@@ -153,6 +153,27 @@ class JarvisAccessibilityService : AccessibilityService() {
 
         val isEnabled: Boolean get() = instance != null
 
+        /** Immediate (non-queued) system navigation actions — no screen inspection needed for these. */
+        fun pressBack(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_BACK) ?: false
+        fun pressHome(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_HOME) ?: false
+        fun openRecents(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_RECENTS) ?: false
+
+        /** Reads the visible text currently on screen, top to bottom, deduplicated. */
+        fun readVisibleText(): String? {
+            val root = instance?.rootInActiveWindow ?: return null
+            val lines = mutableListOf<String>()
+            collectVisibleText(root, lines)
+            return lines.distinct().take(80).joinToString("\n").takeIf { it.isNotBlank() }
+        }
+
+        private fun collectVisibleText(node: AccessibilityNodeInfo, out: MutableList<String>) {
+            val text = node.text?.toString()?.trim()
+            if (!text.isNullOrEmpty()) out.add(text)
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { collectVisibleText(it, out) }
+            }
+        }
+
         /** Queues a sequence of steps to run against whatever app is currently in the foreground. */
         fun enqueue(steps: List<AutomationStep>) {
             queue.addAll(steps)

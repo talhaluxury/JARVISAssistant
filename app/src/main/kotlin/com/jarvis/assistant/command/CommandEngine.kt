@@ -72,6 +72,19 @@ object CommandEngine {
 
                 "ENABLE_PHONE_CONTROL" -> JarvisCommand.EnablePhoneControl
 
+                "GO_HOME" -> JarvisCommand.GoHome
+                "GO_BACK" -> JarvisCommand.GoBack
+                "OPEN_RECENTS" -> JarvisCommand.OpenRecentApps
+                "MEDIA_PLAY_PAUSE" -> JarvisCommand.MediaPlayPause
+                "MEDIA_NEXT" -> JarvisCommand.MediaNext
+                "MEDIA_PREVIOUS" -> JarvisCommand.MediaPrevious
+                "READ_SCREEN" -> JarvisCommand.ReadScreen
+
+                "SAVE_TEXT_FILE" -> {
+                    val filename = json.optString("filename").takeIf { it.isNotBlank() } ?: return null
+                    JarvisCommand.SaveTextFile(filename, json.optString("content"))
+                }
+
                 "AUTOMATE" -> parseAutomate(json)
 
                 else -> null
