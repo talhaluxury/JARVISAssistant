@@ -1,10 +1,15 @@
 package com.jarvis.assistant.ui.screens.settings
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings as AndroidSettings
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.assistant.JarvisApplication
 import com.jarvis.assistant.accessibility.JarvisAccessibilityService
+import com.jarvis.assistant.overlay.OverlayService
 import com.jarvis.assistant.util.NetworkMonitor
 import com.jarvis.assistant.voice.JarvisVoice
 import kotlinx.coroutines.delay
@@ -25,7 +30,10 @@ data class SettingsState(
     val voices: List<JarvisVoice> = emptyList(),
     val aiConfigured: Boolean = false,
     val phoneControlEnabled: Boolean = false,
-    val networkOnline: Boolean = false
+    val networkOnline: Boolean = false,
+    val confirmEveryAction: Boolean = false,
+    val backgroundJarvisEnabled: Boolean = false,
+    val overlayPermissionGranted: Boolean = false
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -41,7 +49,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             language = prefs.preferredLanguage,
             speechRate = prefs.speechRate,
             wakeWordEnabled = prefs.wakeWordEnabled,
-            voiceName = prefs.voiceName
+            voiceName = prefs.voiceName,
+            confirmEveryAction = prefs.confirmEveryAction,
+            backgroundJarvisEnabled = prefs.backgroundJarvisEnabled
         )
     )
     val state: StateFlow<SettingsState> = _state.asStateFlow()
@@ -118,8 +128,41 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _state.value = _state.value.copy(
             aiConfigured = prefs.aiApiKey.isNullOrBlank().not(),
             phoneControlEnabled = JarvisAccessibilityService.isEnabled,
-            networkOnline = NetworkMonitor.isOnline(getApplication())
+            networkOnline = NetworkMonitor.isOnline(getApplication()),
+            overlayPermissionGranted = AndroidSettings.canDrawOverlays(getApplication())
         )
+    }
+
+    fun updateConfirmEveryAction(enabled: Boolean) {
+        prefs.confirmEveryAction = enabled
+        _state.value = _state.value.copy(confirmEveryAction = enabled)
+    }
+
+    /** Opens the system screen to grant "display over other apps" — Android requires this
+     * be done manually by the user; no app can grant it to itself. */
+    fun requestOverlayPermission() {
+        val app = getApplication<Application>()
+        val intent = Intent(
+            AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:${app.packageName}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        app.startActivity(intent)
+    }
+
+    fun setBackgroundJarvisEnabled(enabled: Boolean) {
+        val app = getApplication<Application>()
+        if (enabled && !AndroidSettings.canDrawOverlays(app)) {
+            requestOverlayPermission()
+            return
+        }
+        prefs.backgroundJarvisEnabled = enabled
+        _state.value = _state.value.copy(backgroundJarvisEnabled = enabled)
+        val serviceIntent = Intent(app, OverlayService::class.java)
+        if (enabled) {
+            ContextCompat.startForegroundService(app, serviceIntent)
+        } else {
+            app.stopService(serviceIntent)
+        }
     }
 
     fun clearMemory() {

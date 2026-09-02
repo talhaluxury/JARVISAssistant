@@ -11,6 +11,7 @@ import com.jarvis.assistant.data.repository.MemoryRepository
 import com.jarvis.assistant.search.WebSearchService
 import com.jarvis.assistant.voice.SpeechToTextManager
 import com.jarvis.assistant.voice.TextToSpeechManager
+import com.jarvis.assistant.voice.VoiceActivityDetector
 
 /**
  * Simple hand-written dependency container. Keeping this manual (instead of
@@ -33,6 +34,7 @@ class AppContainer(context: Context) {
 
     val speechToTextManager = SpeechToTextManager(context)
     val textToSpeechManager = TextToSpeechManager(context)
+    val voiceActivityDetector = VoiceActivityDetector(context)
 
     val actionExecutor = AndroidActionExecutor(context)
 }

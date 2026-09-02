@@ -158,12 +158,51 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             Switch(checked = state.wakeWordEnabled, onCheckedChange = viewModel::updateWakeWord)
         }
 
+        SectionLabel("Automation")
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Confirm before every action")
+                Text(
+                    "Off by default for low-risk actions (opening apps, going home/back). Turn " +
+                        "this on to have JARVIS ask yes/no before doing anything at all.",
+                    color = JarvisTextSecondary,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+            Switch(checked = state.confirmEveryAction, onCheckedChange = viewModel::updateConfirmEveryAction)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Background JARVIS (floating mic)")
+                Text(
+                    if (state.overlayPermissionGranted)
+                        "A small mic bubble stays on top of other apps — tap it to talk to " +
+                            "JARVIS without leaving what you're doing."
+                    else
+                        "Needs the \"Display over other apps\" permission first. Turning this on " +
+                            "will open that system screen.",
+                    color = JarvisTextSecondary,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+            Switch(checked = state.backgroundJarvisEnabled, onCheckedChange = viewModel::setBackgroundJarvisEnabled)
+        }
+
         SectionLabel("Privacy & Data")
         Text(
-            "JARVIS only listens when you tap the microphone button — there is no silent or " +
-                "background recording. Contacts, messages, and notifications are never read unless " +
-                "you explicitly grant that permission for a specific action. Memories are stored " +
-                "only on this device and only when you ask JARVIS to remember something.",
+            "JARVIS only listens when you tap the microphone button (in-app or the floating " +
+                "bubble, if enabled) — it does not transcribe or store anything otherwise. While " +
+                "JARVIS is speaking, it briefly checks the microphone's volume level only, not " +
+                "what's said, so it can stop and listen if you start talking over it; that check " +
+                "isn't recorded or sent anywhere. Contacts, messages, and notifications are never " +
+                "read unless you explicitly grant that permission for a specific action. Memories " +
+                "are stored only on this device and only when you ask JARVIS to remember something.",
             color = JarvisTextSecondary,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(16.dp)

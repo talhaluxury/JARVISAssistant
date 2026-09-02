@@ -47,6 +47,10 @@ class JarvisAccessibilityService : AccessibilityService() {
     private fun tryRunNextStep() {
         val step = queue.peek() ?: return
         val root = rootInActiveWindow
+        val label = describeStep(step)
+        if (attemptsOnCurrentStep == 0) {
+            onStepEvent?.invoke(completedSteps + 1, totalSteps, label, null)
+        }
         val handled = try {
             when (step) {
                 is AutomationStep.TapText -> root?.let { tapNode(findByText(it, step.text)) } ?: false
@@ -64,6 +68,8 @@ class JarvisAccessibilityService : AccessibilityService() {
 
         if (handled) {
             queue.poll()
+            completedSteps++
+            onStepEvent?.invoke(completedSteps, totalSteps, label, true)
             attemptsOnCurrentStep = 0
             val delay = if (step is AutomationStep.Wait) step.milliseconds else 250L
             handler.postDelayed({ tryRunNextStep() }, delay)
@@ -73,9 +79,22 @@ class JarvisAccessibilityService : AccessibilityService() {
                 // Give up on this one step so the whole automation doesn't hang forever;
                 // move on so the rest of the sequence still gets a chance to run.
                 queue.poll()
+                completedSteps++
+                onStepEvent?.invoke(completedSteps, totalSteps, label, false)
                 attemptsOnCurrentStep = 0
             }
         }
+    }
+
+    private fun describeStep(step: AutomationStep): String = when (step) {
+        is AutomationStep.TapText -> "TAP \"${step.text}\""
+        is AutomationStep.TapDescription -> "TAP \"${step.description}\""
+        is AutomationStep.TypeText -> "TYPE \"${step.text}\""
+        is AutomationStep.Wait -> "WAIT"
+        AutomationStep.PressBack -> "BACK"
+        AutomationStep.PressHome -> "HOME"
+        AutomationStep.ScrollForward -> "SCROLL"
+        AutomationStep.ScrollBackward -> "SCROLL"
     }
 
     private fun tapNode(node: AccessibilityNodeInfo?): Boolean {
@@ -150,6 +169,11 @@ class JarvisAccessibilityService : AccessibilityService() {
         private const val MAX_ATTEMPTS_PER_STEP = 20 // ~8s at 400ms polling
         private var instance: JarvisAccessibilityService? = null
         private val queue = ArrayDeque<AutomationStep>()
+        private var totalSteps = 0
+        private var completedSteps = 0
+
+        /** Fires with real progress as each queued step actually runs: (current, total, label, success). */
+        var onStepEvent: ((Int, Int, String, Boolean?) -> Unit)? = null
 
         val isEnabled: Boolean get() = instance != null
 
@@ -176,6 +200,8 @@ class JarvisAccessibilityService : AccessibilityService() {
 
         /** Queues a sequence of steps to run against whatever app is currently in the foreground. */
         fun enqueue(steps: List<AutomationStep>) {
+            totalSteps = steps.size
+            completedSteps = 0
             queue.addAll(steps)
             val service = instance ?: return
             service.handler.post(service.pollRunnable)

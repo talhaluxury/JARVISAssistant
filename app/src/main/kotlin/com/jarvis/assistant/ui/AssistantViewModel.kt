@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.assistant.JarvisApplication
+import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 import com.jarvis.assistant.ai.ChatMessage
 import com.jarvis.assistant.ai.PromptBuilder
 import com.jarvis.assistant.command.CommandEngine
@@ -48,6 +49,27 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _isOffline = MutableStateFlow(!NetworkMonitor.isOnline(application))
     val isOffline: StateFlow<Boolean> = _isOffline.asStateFlow()
+
+    /** A short rolling console of real system events — what JARVIS actually just did. */
+    private val _commandLog = MutableStateFlow<List<String>>(emptyList())
+    val commandLog: StateFlow<List<String>> = _commandLog.asStateFlow()
+
+    private fun log(line: String) {
+        _commandLog.value = (_commandLog.value + line).takeLast(6)
+    }
+
+    init {
+        // Real, live progress from the Accessibility Service as it works through an AUTOMATE
+        // sequence — not simulated text, this fires exactly when a step actually runs.
+        JarvisAccessibilityService.onStepEvent = { current, total, label, success ->
+            val tag = when (success) {
+                true -> "OK"
+                false -> "SKIPPED"
+                null -> "..."
+            }
+            log("TASK $current/$total  $label  $tag")
+        }
+    }
 
     private val _currentConversationId = MutableStateFlow<Long?>(null)
     val currentConversationId: StateFlow<Long?> = _currentConversationId.asStateFlow()
@@ -173,6 +195,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     _statusText.value = "SYSTEM READY"
 
                     val command = CommandEngine.parse(result.commandJson)
+                    if (command != null) log("COMMAND RECEIVED: ${command::class.simpleName?.uppercase()}")
                     when {
                         command is JarvisCommand.ReadScreen -> {
                             // A read-only command: what it "says" is whatever it finds on screen,
@@ -222,15 +245,18 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             viewModelScope.launch { container.memoryRepository.remember(command.content) }
             return
         }
-        if (command.requiresConfirmation()) {
+        if (command.requiresConfirmation() || container.securePrefs.confirmEveryAction) {
             _pendingCommand.value = PendingCommand(command, command.describe())
         } else {
-            _statusText.value = "EXECUTING: ${command.describe().removeSuffix("?").uppercase()}"
+            val label = command.describe().removeSuffix("?").uppercase()
+            _statusText.value = "EXECUTING: $label"
+            log("ACTION: $label")
             val result = container.actionExecutor.execute(command)
             _statusText.value = when (result) {
                 is ExecutionResult.Success -> "TASK COMPLETE"
                 is ExecutionResult.Failure -> result.message
             }
+            log("STATUS: ${if (result is ExecutionResult.Success) "COMPLETE" else "FAILED"}")
         }
     }
 
@@ -238,12 +264,15 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         val pending = _pendingCommand.value ?: return
         _pendingCommand.value = null
         if (confirmed) {
-            _statusText.value = "EXECUTING: ${pending.command.describe().removeSuffix("?").uppercase()}"
+            val label = pending.command.describe().removeSuffix("?").uppercase()
+            _statusText.value = "EXECUTING: $label"
+            log("ACTION: $label")
             val result = container.actionExecutor.execute(pending.command)
             _statusText.value = when (result) {
                 is ExecutionResult.Success -> "TASK COMPLETE"
                 is ExecutionResult.Failure -> result.message
             }
+            log("STATUS: ${if (result is ExecutionResult.Success) "COMPLETE" else "FAILED"}")
         } else {
             _statusText.value = "SYSTEM READY"
         }
@@ -262,13 +291,29 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         // Default to a male-sounding voice the first time, then remember whatever the user picks.
         val voiceName = prefs.voiceName ?: container.textToSpeechManager.autoSelectMaleVoice()?.also { prefs.voiceName = it }
         container.textToSpeechManager.setVoice(voiceName)
+
+        // Barge-in: while speaking, also watch the mic for the user starting to talk over it.
+        // The moment that happens, stop talking immediately and start listening to them instead.
+        val interrupted = java.util.concurrent.atomic.AtomicBoolean(false)
+        container.voiceActivityDetector.start {
+            if (interrupted.compareAndSet(false, true)) {
+                container.textToSpeechManager.stop()
+            }
+        }
         container.textToSpeechManager.speak(text)
-        _voiceState.value = VoiceState.IDLE
-        _statusText.value = "SYSTEM READY"
+        container.voiceActivityDetector.stop()
+
+        if (interrupted.get()) {
+            startListening(languageTag = null)
+        } else {
+            _voiceState.value = VoiceState.IDLE
+            _statusText.value = "SYSTEM READY"
+        }
     }
 
     override fun onCleared() {
         super.onCleared()
+        JarvisAccessibilityService.onStepEvent = null
         container.textToSpeechManager.shutdown()
         container.speechToTextManager.cancel()
     }

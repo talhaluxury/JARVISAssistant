@@ -57,6 +57,16 @@ class SecurePrefs(context: Context) {
         get() = prefs.getBoolean(KEY_WAKE_WORD, false)
         set(value) = prefs.edit().putBoolean(KEY_WAKE_WORD, value).apply()
 
+    /** When on, every action (even ones that don't normally need it) asks for a yes/no first. */
+    var confirmEveryAction: Boolean
+        get() = prefs.getBoolean(KEY_CONFIRM_EVERY_ACTION, false)
+        set(value) = prefs.edit().putBoolean(KEY_CONFIRM_EVERY_ACTION, value).apply()
+
+    /** Whether the floating background mic bubble should be running. */
+    var backgroundJarvisEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BACKGROUND_JARVIS, false)
+        set(value) = prefs.edit().putBoolean(KEY_BACKGROUND_JARVIS, value).apply()
+
     fun isConfigured(): Boolean = !aiApiKey.isNullOrBlank()
 
     companion object {
@@ -68,5 +78,7 @@ class SecurePrefs(context: Context) {
         private const val KEY_SPEECH_RATE = "speech_rate"
         private const val KEY_VOICE_NAME = "voice_name"
         private const val KEY_WAKE_WORD = "wake_word_enabled"
+        private const val KEY_CONFIRM_EVERY_ACTION = "confirm_every_action"
+        private const val KEY_BACKGROUND_JARVIS = "background_jarvis_enabled"
     }
 }
