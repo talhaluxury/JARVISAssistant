@@ -23,6 +23,7 @@ import com.jarvis.assistant.ai.PromptBuilder
 import com.jarvis.assistant.command.CommandEngine
 import com.jarvis.assistant.command.ExecutionResult
 import com.jarvis.assistant.command.JarvisCommand
+import com.jarvis.assistant.command.requiresConfirmation
 import com.jarvis.assistant.di.AppContainer
 import com.jarvis.assistant.search.needsWebSearch
 import com.jarvis.assistant.voice.SpeechEvent
