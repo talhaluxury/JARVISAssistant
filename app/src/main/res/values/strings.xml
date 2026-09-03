@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">JARVIS</string>
     <string name="accessibility_service_description">Lets JARVIS tap, type, and navigate other apps on your behalf, only when you ask it to do something in another app.</string>
+    <string name="live_wallpaper_description">A glowing JARVIS orb that lives behind your home screen icons and reflects whether JARVIS is idle, listening, thinking, or speaking.</string>
 </resources>

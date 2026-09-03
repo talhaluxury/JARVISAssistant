@@ -26,13 +26,18 @@ import com.jarvis.assistant.command.JarvisCommand
 import com.jarvis.assistant.command.requiresConfirmation
 import com.jarvis.assistant.di.AppContainer
 import com.jarvis.assistant.search.needsWebSearch
+import com.jarvis.assistant.voice.JarvisGlobalState
 import com.jarvis.assistant.voice.SpeechEvent
+import com.jarvis.assistant.voice.VoiceState
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -41,6 +46,12 @@ import kotlinx.coroutines.launch
  * pipeline as the in-app chat — nothing here is a separate/fake pathway. It only ever runs
  * because the user explicitly turned it on in Settings and granted the "display over other
  * apps" permission Android requires for this; it can be turned off from Settings at any time.
+ *
+ * If the user also turns on "Wake Word" in Settings, this service additionally runs a
+ * continuous listen-for-"Jarvis" loop (see [startWakeWordLoop]) so the user can speak without
+ * tapping anything first. The persistent notification stays visible the whole time this is
+ * active — Android requires that for any app using the microphone in the background, and it
+ * is JARVIS's only way of telling the user "I can hear you right now."
  *
  * Actions that would normally ask for confirmation are NOT auto-approved here — instead the
  * user is told to open JARVIS to approve them, since a floating bubble has no safe way to
@@ -54,6 +65,7 @@ class OverlayService : Service() {
     private var layoutParams: WindowManager.LayoutParams? = null
     private var conversationId: Long? = null
     private var isBusy = false
+    private var wakeWordJob: Job? = null
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -62,6 +74,7 @@ class OverlayService : Service() {
         container = (applicationContext as JarvisApplication).container
         startForegroundNotification()
         addBubble()
+        startWakeWordLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -70,11 +83,86 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        wakeWordJob?.cancel()
         serviceScope.cancel()
         container.voiceActivityDetector.stop()
         container.speechToTextManager.cancel()
         bubbleView?.let { runCatching { windowManager.removeView(it) } }
         bubbleView = null
+    }
+
+    // ------------------------------------------------------------------------------ wake word
+
+    /**
+     * Runs for the whole life of the service. When the user has turned "Always listening" on
+     * in Settings, this repeatedly listens for short bursts of speech and checks each one for
+     * the wake word ("Jarvis"). It backs off whenever the bubble is busy with a manual tap, and
+     * re-checks the Settings toggle on every loop so turning it off takes effect within ~1s
+     * without needing to restart the service.
+     *
+     * Note: unlike a dedicated low-power wake-word engine, this uses the same cloud/system
+     * speech recognizer as the rest of the app, restarted in a loop — so it uses more battery
+     * and data than a true offline wake-word chip would. That trade-off is what makes hands-free
+     * activation possible without adding a new native dependency.
+     */
+    private fun startWakeWordLoop() {
+        wakeWordJob = serviceScope.launch {
+            while (isActive) {
+                if (!container.securePrefs.wakeWordEnabled || isBusy) {
+                    delay(700)
+                    continue
+                }
+                var heard: String? = null
+                runCatching {
+                    container.speechToTextManager.listen(languageTag = null).collect { event ->
+                        if (event is SpeechEvent.FinalResult) heard = event.text
+                    }
+                }
+                if (isBusy || !container.securePrefs.wakeWordEnabled) continue
+
+                val afterWakeWord = heard?.let { extractAfterWakeWord(it) }
+                if (afterWakeWord != null) {
+                    isBusy = true
+                    try {
+                        if (afterWakeWord.isBlank()) {
+                            // Just "Jarvis" was said with nothing after it — listen once more
+                            // for the actual request, same as tapping the bubble.
+                            runVoiceTurn()
+                        } else {
+                            var bargedIn = processCommand(afterWakeWord)
+                            var depth = 0
+                            while (bargedIn && depth < 4) {
+                                bargedIn = false
+                                setState(VoiceState.LISTENING)
+                                var followUp: String? = null
+                                container.speechToTextManager.listen(languageTag = null).collect { event ->
+                                    if (event is SpeechEvent.FinalResult) followUp = event.text
+                                }
+                                val t = followUp?.takeIf { it.isNotBlank() } ?: break
+                                bargedIn = processCommand(t)
+                                depth++
+                            }
+                        }
+                    } finally {
+                        isBusy = false
+                        setState(VoiceState.IDLE)
+                    }
+                }
+                delay(250)
+            }
+        }
+    }
+
+    /** Returns the text after the wake word if it was said, or null if it wasn't heard at all. */
+    private fun extractAfterWakeWord(text: String): String? {
+        val lower = text.lowercase()
+        for (wakeWord in WAKE_WORDS) {
+            val idx = lower.indexOf(wakeWord)
+            if (idx >= 0) {
+                return text.substring(idx + wakeWord.length).trim().trimStart(',', '.', ':', '،', '-')
+            }
+        }
+        return null
     }
 
     // ---------------------------------------------------------------- notification / lifecycle
@@ -84,9 +172,14 @@ class OverlayService : Service() {
             val channel = NotificationChannel(CHANNEL_ID, "JARVIS Background", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
+        val contentText = if (container.securePrefs.wakeWordEnabled) {
+            "Say \"Jarvis\" anytime, or tap the floating icon."
+        } else {
+            "Tap the floating icon to talk to JARVIS from any app."
+        }
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("JARVIS is running in the background")
-            .setContentText("Tap the floating icon to talk to JARVIS from any app.")
+            .setContentText(contentText)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .build()
@@ -164,6 +257,19 @@ class OverlayService : Service() {
         (bubbleView?.background as? GradientDrawable)?.setStroke(6, color)
     }
 
+    /** Updates both the floating bubble's ring color and the shared state the live wallpaper
+     * (and anything else in the app) reads to know what JARVIS is doing right now. */
+    private fun setState(voiceState: VoiceState) {
+        val color = when (voiceState) {
+            VoiceState.LISTENING -> LISTENING_COLOR
+            VoiceState.THINKING -> THINKING_COLOR
+            VoiceState.SPEAKING -> SPEAKING_COLOR
+            VoiceState.ERROR, VoiceState.IDLE -> IDLE_COLOR
+        }
+        setBubbleColor(color)
+        JarvisGlobalState.update(voiceState)
+    }
+
     // -------------------------------------------------------------------------- voice pipeline
 
     private fun onBubbleTapped() {
@@ -173,20 +279,20 @@ class OverlayService : Service() {
             container.voiceActivityDetector.stop()
             container.speechToTextManager.cancel()
             isBusy = false
-            setBubbleColor(IDLE_COLOR)
+            setState(VoiceState.IDLE)
             return
         }
         isBusy = true
         serviceScope.launch {
             runVoiceTurn()
             isBusy = false
-            setBubbleColor(IDLE_COLOR)
+            setState(VoiceState.IDLE)
         }
     }
 
     private suspend fun runVoiceTurn(depth: Int = 0) {
         if (depth > 4) return
-        setBubbleColor(LISTENING_COLOR)
+        setState(VoiceState.LISTENING)
         var finalText: String? = null
         container.speechToTextManager.listen(languageTag = null).collect { event ->
             if (event is SpeechEvent.FinalResult) finalText = event.text
@@ -198,7 +304,7 @@ class OverlayService : Service() {
 
     /** Returns true if the user started talking again while JARVIS was replying (barge-in). */
     private suspend fun processCommand(text: String): Boolean {
-        setBubbleColor(THINKING_COLOR)
+        setState(VoiceState.THINKING)
         val convId = ensureConversation()
         container.conversationRepository.addMessage(convId, "user", text)
 
@@ -250,7 +356,7 @@ class OverlayService : Service() {
     }
 
     private suspend fun speakWithBargeIn(text: String): Boolean {
-        setBubbleColor(SPEAKING_COLOR)
+        setState(VoiceState.SPEAKING)
         val prefs = container.securePrefs
         container.textToSpeechManager.setRate(prefs.speechRate)
         val voiceName = prefs.voiceName ?: container.textToSpeechManager.autoSelectMaleVoice()?.also { prefs.voiceName = it }
@@ -286,5 +392,8 @@ class OverlayService : Service() {
         private val LISTENING_COLOR = 0xFFFF6B6B.toInt()
         private val THINKING_COLOR = 0xFF7C6BFF.toInt()
         private val SPEAKING_COLOR = 0xFF34D399.toInt()
+
+        /** Checked case-insensitively against each heard phrase; add more variants if needed. */
+        private val WAKE_WORDS = listOf("hey jarvis", "jarvis", "جارویس")
     }
 }

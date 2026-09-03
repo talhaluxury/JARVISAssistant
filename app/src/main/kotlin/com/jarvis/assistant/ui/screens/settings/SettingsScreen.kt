@@ -145,12 +145,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("\"Hey JARVIS\" (experimental)")
+                Text("\"Hey JARVIS\" — hands-free")
                 Text(
-                    "Continuous background listening isn't reliable on modern Android without a " +
-                        "foreground service and a persistent notification. Enabling this switches to " +
-                        "a foreground listening mode with a visible mic indicator instead of silent " +
-                        "background recording.",
+                    "Say \"Jarvis\" anytime and JARVIS listens for what follows — no tap needed. " +
+                        "Runs via the background mic bubble with a persistent notification (Android " +
+                        "requires this to be visible, never silent). Uses more battery and data than " +
+                        "tap-to-talk since it's listening continuously.",
                     color = JarvisTextSecondary,
                     style = MaterialTheme.typography.labelSmall
                 )
@@ -194,11 +194,41 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             Switch(checked = state.backgroundJarvisEnabled, onCheckedChange = viewModel::setBackgroundJarvisEnabled)
         }
 
+        SectionLabel("Home Screen")
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Live wallpaper")
+                Text(
+                    "A glowing orb behind your home screen icons that pulses and changes color " +
+                        "while JARVIS listens, thinks, or speaks — pure visual, it doesn't use the " +
+                        "mic itself. Opens Android's own wallpaper picker; you still tap \"Set " +
+                        "wallpaper\" there to confirm.",
+                    color = JarvisTextSecondary,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+        OutlinedButton(
+            onClick = { viewModel.openLiveWallpaperPicker() },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+        ) {
+            Text("Set as live wallpaper")
+        }
+
         SectionLabel("Privacy & Data")
         Text(
-            "JARVIS only listens when you tap the microphone button (in-app or the floating " +
-                "bubble, if enabled) — it does not transcribe or store anything otherwise. While " +
-                "JARVIS is speaking, it briefly checks the microphone's volume level only, not " +
+            (if (state.wakeWordEnabled)
+                "Wake word is ON: JARVIS listens continuously for the word \"Jarvis\" while the " +
+                    "background service is running (shown by the persistent notification), and only " +
+                    "sends what you say afterward to the AI provider. Turn Wake Word off in the " +
+                    "section above to go back to tap-to-talk only. "
+            else
+                "JARVIS only listens when you tap the microphone button (in-app or the floating " +
+                    "bubble, if enabled) — it does not transcribe or store anything otherwise. ") +
+                "While JARVIS is speaking, it briefly checks the microphone's volume level only, not " +
                 "what's said, so it can stop and listen if you start talking over it; that check " +
                 "isn't recorded or sent anywhere. Contacts, messages, and notifications are never " +
                 "read unless you explicitly grant that permission for a specific action. Memories " +

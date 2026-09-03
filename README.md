@@ -29,14 +29,20 @@ command engine for phone actions, local memory, and local chat history.
 - **Web search hook**: current-info questions ("today", "latest", "weather", "aaj", ...)
   get routed through a Brave Search API call (your own key, entered in Settings) before
   being handed to the model as context, instead of letting the model guess.
+- **Wake word ("Hey Jarvis")**: an opt-in Settings toggle that runs a continuous
+  listen-for-"Jarvis" loop inside the background service, so you can talk without tapping
+  the mic bubble first. Always shown via the persistent notification while active (Android
+  requires this for any background mic use — there's no silent version of this).
+- **Home / launcher mode**: `MainActivity` also declares the `HOME` category, so JARVIS can
+  be picked as the device's default Home app from Android's launcher chooser
+  (Settings → Apps → Default apps → Home app).
+- **Live wallpaper**: an animated JARVIS orb (`LiveWallpaperService`) that runs behind the
+  home screen icons and reflects the same idle/listening/thinking/speaking state as the
+  background service, via a shared `JarvisGlobalState` — the wallpaper itself never touches
+  the microphone. Set from Settings → "Set as live wallpaper".
 
 ## Not yet built (Phase 3/4 from the spec — architecture is ready for these)
 
-- True always-on "Hey JARVIS" wake word: Android doesn't allow reliable silent background
-  audio listening without a foreground service + persistent notification. The Settings
-  screen has a toggle and an explanation of this tradeoff; wiring it to a `ForegroundService`
-  that repeatedly triggers `SpeechToTextManager.listen()` is the next step and slots into
-  the existing `voice/` package without changing anything else.
 - Reading notifications (only with explicit permission) — not wired in yet.
 
 ## Tech stack

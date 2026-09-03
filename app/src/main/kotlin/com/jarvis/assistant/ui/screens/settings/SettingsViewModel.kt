@@ -1,6 +1,8 @@
 package com.jarvis.assistant.ui.screens.settings
 
 import android.app.Application
+import android.app.WallpaperManager
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings as AndroidSettings
@@ -12,6 +14,7 @@ import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 import com.jarvis.assistant.overlay.OverlayService
 import com.jarvis.assistant.util.NetworkMonitor
 import com.jarvis.assistant.voice.JarvisVoice
+import com.jarvis.assistant.wallpaper.LiveWallpaperService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -104,9 +107,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _state.value = _state.value.copy(speechRate = value)
     }
 
+    /** Wake word only works while the background service is running (that's where the
+     * listening loop lives), so turning this on also turns on Background JARVIS. */
     fun updateWakeWord(enabled: Boolean) {
+        val app = getApplication<Application>()
+        if (enabled && !AndroidSettings.canDrawOverlays(app)) {
+            requestOverlayPermission()
+            return
+        }
         prefs.wakeWordEnabled = enabled
         _state.value = _state.value.copy(wakeWordEnabled = enabled)
+        if (enabled && !prefs.backgroundJarvisEnabled) {
+            setBackgroundJarvisEnabled(true)
+        }
     }
 
     fun updateVoice(name: String) {
@@ -167,6 +180,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun clearMemory() {
         viewModelScope.launch { container.memoryRepository.clearAll() }
+    }
+
+    /** Opens Android's own "set live wallpaper" screen with JARVIS pre-selected. The user still
+     * has to tap "Set wallpaper" there themselves — no app can set the wallpaper silently. */
+    fun openLiveWallpaperPicker() {
+        val app = getApplication<Application>()
+        val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+            putExtra(
+                WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                ComponentName(app, LiveWallpaperService::class.java)
+            )
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { app.startActivity(intent) }
     }
 
     fun clearHistory() {
