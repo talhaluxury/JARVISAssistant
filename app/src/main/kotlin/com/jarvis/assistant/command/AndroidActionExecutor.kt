@@ -20,8 +20,9 @@ import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 import com.jarvis.assistant.data.local.prefs.SecurePrefs
 
 sealed class ExecutionResult {
-    data class Success(val message: String) : ExecutionResult()
-    data class Failure(val message: String) : ExecutionResult()
+    abstract val message: String
+    data class Success(override val message: String) : ExecutionResult()
+    data class Failure(override val message: String) : ExecutionResult()
 }
 
 /**
