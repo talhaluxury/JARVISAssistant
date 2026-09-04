@@ -488,6 +488,13 @@ class OverlayService : Service() {
         return id
     }
 
+    /** Publishes the current voice state process-wide (drives the live-wallpaper orb animation
+     * via [JarvisGlobalState]) — this was called all over this file but never actually defined,
+     * so the whole service failed to compile. */
+    private fun setState(state: VoiceState) {
+        JarvisGlobalState.update(state)
+    }
+
     private fun openAppForConfirmation() {
         val intent = packageManager.getLaunchIntentForPackage(packageName)
             ?: Intent(this, MainActivity::class.java)
