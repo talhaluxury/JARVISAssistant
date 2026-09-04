@@ -208,3 +208,12 @@ recognizer now tears down stale sessions before starting another one to reduce r
 No arbitrary AI-generated Kotlin/Java/Android code is executed. Screen capture remains subject to
 Android's MediaProjection user-consent flow; the agent does not bypass protected content or Android
 security restrictions.
+
+## Hands-free voice feedback upgrade
+
+- The microphone is handled by the foreground service; the live wallpaper remains visual-only.
+- Listening continues while another supported app is in the foreground when Background JARVIS/Wake Word is enabled.
+- Before executing a command, JARVIS speaks a concise description of the intended action.
+- Multi-step accessibility automation reports the current step aloud and announces failed steps.
+- Execution failures are spoken with a short, actionable recovery suggestion.
+- JARVIS never treats an execution attempt as success merely because an AI response was generated; the executor result is checked first.

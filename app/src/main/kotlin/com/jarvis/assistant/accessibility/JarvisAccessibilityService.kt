@@ -20,6 +20,7 @@ class JarvisAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var attemptsOnCurrentStep = 0
+    private var scrollAttemptsOnCurrentStep = 0
     private val pollRunnable = object : Runnable {
         override fun run() {
             tryRunNextStep()
@@ -75,10 +76,20 @@ class JarvisAccessibilityService : AccessibilityService() {
             completedSteps++
             onStepEvent?.invoke(completedSteps, totalSteps, label, true)
             attemptsOnCurrentStep = 0
+            scrollAttemptsOnCurrentStep = 0
             val delay = if (step is AutomationStep.Wait) step.milliseconds else 250L
             handler.postDelayed({ tryRunNextStep() }, delay)
         } else {
             attemptsOnCurrentStep++
+            // The target text/description this step is looking for often isn't on screen yet —
+            // it's further down a list (a chat, a search-results page, a settings menu). Without
+            // this, the step just re-checks the same unchanged screen until it times out, which
+            // is why automation used to fail constantly on anything below the fold. Every few
+            // failed attempts, nudge the screen forward and keep looking, up to a scroll budget.
+            if (isSearchableStep(step) && attemptsOnCurrentStep % 3 == 0 && scrollAttemptsOnCurrentStep < MAX_SCROLL_ATTEMPTS_PER_STEP) {
+                root?.let { scroll(it, forward = true) }
+                scrollAttemptsOnCurrentStep++
+            }
             if (attemptsOnCurrentStep > MAX_ATTEMPTS_PER_STEP) {
                 // Give up on this one step so the whole automation doesn't hang forever;
                 // move on so the rest of the sequence still gets a chance to run.
@@ -87,8 +98,18 @@ class JarvisAccessibilityService : AccessibilityService() {
                 completedSteps++
                 onStepEvent?.invoke(completedSteps, totalSteps, label, false)
                 attemptsOnCurrentStep = 0
+                scrollAttemptsOnCurrentStep = 0
             }
         }
+    }
+
+    /** Steps that look for a specific on-screen target by text/description, and so can benefit
+     * from scrolling to bring an off-screen target into view. Steps that act on whatever's
+     * already focused/visible (TypeText, SubmitField, Wait, back/home) gain nothing from it. */
+    private fun isSearchableStep(step: AutomationStep): Boolean = when (step) {
+        is AutomationStep.TapText, is AutomationStep.TapDescription,
+        is AutomationStep.LongPressText, is AutomationStep.LongPressDescription -> true
+        else -> false
     }
 
     private fun describeStep(step: AutomationStep): String = when (step) {
@@ -259,6 +280,7 @@ class JarvisAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val MAX_ATTEMPTS_PER_STEP = 20 // ~8s at 400ms polling
+        private const val MAX_SCROLL_ATTEMPTS_PER_STEP = 6 // caps how far it searches down a list
         private var instance: JarvisAccessibilityService? = null
         private val queue = ArrayDeque<AutomationStep>()
         private var totalSteps = 0

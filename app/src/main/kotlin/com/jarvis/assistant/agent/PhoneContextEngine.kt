@@ -7,7 +7,6 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Build
-import android.provider.Settings
 import android.view.WindowManager
 import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 import java.text.SimpleDateFormat
@@ -19,7 +18,7 @@ data class PhoneContext(
     val screenWidth: Int, val screenHeight: Int, val orientation: String,
     val networkConnected: Boolean, val wifiEnabled: Boolean, val bluetoothEnabled: Boolean,
     val batteryPercent: Int, val charging: Boolean, val accessibilityEnabled: Boolean,
-    val overlayGranted: Boolean, val microphoneGranted: Boolean, val notificationGranted: Boolean,
+    val microphoneGranted: Boolean, val notificationGranted: Boolean,
     val time: String
 ) {
     fun toPromptString() = buildString {
@@ -30,7 +29,7 @@ data class PhoneContext(
         appendLine("NETWORK: ${if (networkConnected) "connected" else "offline"}; WIFI: ${if (wifiEnabled) "on" else "off"}")
         appendLine("BLUETOOTH: ${if (bluetoothEnabled) "on" else "off"}")
         appendLine("BATTERY: $batteryPercent%${if (charging) " (charging)" else ""}")
-        appendLine("ACCESSIBILITY: ${if (accessibilityEnabled) "ready" else "disabled"}; OVERLAY: ${if (overlayGranted) "granted" else "denied"}")
+        appendLine("ACCESSIBILITY: ${if (accessibilityEnabled) "ready" else "disabled"}")
         appendLine("MICROPHONE: ${if (microphoneGranted) "granted" else "denied"}; NOTIFICATIONS: ${if (notificationGranted) "granted" else "denied"}")
         append("TIME: $time")
     }
@@ -68,7 +67,7 @@ class PhoneContextEngine(private val context: Context) {
         val notification = Build.VERSION.SDK_INT < 33 || androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         return PhoneContext(pkg, label, screen?.toPromptString() ?: "No accessibility screen context available.", width, height,
             if (width >= height) "landscape" else "portrait", connected, wifi, bluetooth, percent, charging,
-            JarvisAccessibilityService.isEnabled, Settings.canDrawOverlays(context), mic, notification,
+            JarvisAccessibilityService.isEnabled, mic, notification,
             SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
     }
 }

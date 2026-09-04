@@ -18,14 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -121,28 +115,14 @@ fun HomeScreen(viewModel: AssistantViewModel) {
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(
-                    onClick = {
-                        if (voiceState == VoiceState.LISTENING) {
-                            viewModel.cancelListening()
-                        } else {
-                            viewModel.startListening(languageTag = null)
-                        }
-                    },
-                    modifier = Modifier
-                        .size(76.dp)
-                        .background(
-                            color = if (voiceState == VoiceState.LISTENING) JarvisCyan else JarvisSurfaceGlass,
-                            shape = CircleShape
-                        )
-                ) {
-                    Icon(
-                        imageVector = if (voiceState == VoiceState.LISTENING) Icons.Filled.MicOff else Icons.Filled.Mic,
-                        contentDescription = "Microphone",
-                        tint = if (voiceState == VoiceState.LISTENING) Color.Black else JarvisCyan,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
+                Text(
+                    text = if (voiceState == VoiceState.LISTENING)
+                        "JARVIS • LISTENING"
+                    else
+                        "JARVIS • HANDS-FREE",
+                    color = if (voiceState == VoiceState.LISTENING) JarvisCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium
+                )
 
                 Spacer(Modifier.height(20.dp))
 

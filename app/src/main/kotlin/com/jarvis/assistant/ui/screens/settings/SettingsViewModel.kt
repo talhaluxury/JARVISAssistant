@@ -5,7 +5,7 @@ import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
-import android.provider.Settings as AndroidSettings
+import android.provider.Settings
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -37,7 +37,6 @@ data class SettingsState(
     val confirmEveryAction: Boolean = false,
     val backgroundJarvisEnabled: Boolean = false,
     val screenAutomationEnabled: Boolean = true,
-    val overlayPermissionGranted: Boolean = false
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -113,10 +112,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
      * listening loop lives), so turning this on also turns on Background JARVIS. */
     fun updateWakeWord(enabled: Boolean) {
         val app = getApplication<Application>()
-        if (enabled && !AndroidSettings.canDrawOverlays(app)) {
-            requestOverlayPermission()
-            return
-        }
         prefs.wakeWordEnabled = enabled
         _state.value = _state.value.copy(wakeWordEnabled = enabled)
         if (enabled && !prefs.backgroundJarvisEnabled) {
@@ -144,7 +139,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             aiConfigured = prefs.aiApiKey.isNullOrBlank().not(),
             phoneControlEnabled = JarvisAccessibilityService.isEnabled,
             networkOnline = NetworkMonitor.isOnline(getApplication()),
-            overlayPermissionGranted = AndroidSettings.canDrawOverlays(getApplication())
         )
     }
 
@@ -160,24 +154,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _state.value = _state.value.copy(screenAutomationEnabled = enabled)
     }
 
-    /** Opens the system screen to grant "display over other apps" — Android requires this
-     * be done manually by the user; no app can grant it to itself. */
-    fun requestOverlayPermission() {
-        val app = getApplication<Application>()
-        val intent = Intent(
-            AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
-            Uri.parse("package:${app.packageName}")
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        app.startActivity(intent)
-    }
-
     fun setBackgroundJarvisEnabled(enabled: Boolean) {
         val app = getApplication<Application>()
-        if (enabled && !AndroidSettings.canDrawOverlays(app)) {
-            requestOverlayPermission()
-            return
-        }
         prefs.backgroundJarvisEnabled = enabled
+        // Background mode is hands-free mode: automatically enable the wake-word listener.
+        prefs.wakeWordEnabled = enabled
         _state.value = _state.value.copy(backgroundJarvisEnabled = enabled)
         val serviceIntent = Intent(app, OverlayService::class.java)
         if (enabled) {
@@ -185,6 +166,38 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         } else {
             app.stopService(serviceIntent)
         }
+    }
+
+    /** Opens Android's Accessibility settings list. No app can flip this switch on for itself —
+     * Android requires the human to tap it, on purpose, as a security boundary. This just gets
+     * the user to the right screen instead of leaving them to hunt for it. After they come back,
+     * [refreshStatus] (called on every resume) picks up the change automatically. */
+    fun openAccessibilitySettings() {
+        val app = getApplication<Application>()
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { app.startActivity(intent) }
+    }
+
+    /** Opens the OS "battery optimization" screen for this app. On many OEM skins (Xiaomi/MIUI,
+     * Oppo/ColorOS, Vivo, OnePlus, Samsung) background/accessibility services get silently killed
+     * a few minutes after screen-off unless the app is exempted here — a very common reason
+     * automation "works once then stops" or "doesn't work unless the app is open". */
+    fun openBatteryOptimizationSettings() {
+        val app = getApplication<Application>()
+        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+            data = Uri.parse("package:${app.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { app.startActivity(intent) }
+            .onFailure {
+                runCatching {
+                    app.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                }
+            }
     }
 
     fun clearMemory() {

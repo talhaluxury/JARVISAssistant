@@ -3,18 +3,14 @@ package com.jarvis.assistant.overlay
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.graphics.PixelFormat
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
-import android.view.Gravity
-import android.view.MotionEvent
-import android.view.WindowManager
-import android.widget.ImageView
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.jarvis.assistant.JarvisApplication
 import com.jarvis.assistant.MainActivity
 import com.jarvis.assistant.R
@@ -33,7 +29,6 @@ import com.jarvis.assistant.voice.JarvisGlobalState
 import com.jarvis.assistant.voice.SpeechEvent
 import com.jarvis.assistant.voice.VoiceState
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,13 +39,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Lets JARVIS work from ANY app: a small floating mic bubble stays on top of whatever the
- * user is doing. Tapping it listens, thinks, and acts using exactly the same AI/command
- * pipeline as the in-app chat — nothing here is a separate/fake pathway. It only ever runs
- * because the user explicitly turned it on in Settings and granted the "display over other
- * apps" permission Android requires for this; it can be turned off from Settings at any time.
- *
- * If the user also turns on "Wake Word" in Settings, this service additionally runs a
+ * When Background JARVIS / Wake Word is enabled in Settings, this service runs a
  * continuous listen-for-"Jarvis" loop (see [startWakeWordLoop]) so the user can speak without
  * tapping anything first. The persistent notification stays visible the whole time this is
  * active — Android requires that for any app using the microphone in the background, and it
@@ -64,9 +53,6 @@ import kotlinx.coroutines.launch
 class OverlayService : Service() {
 
     private lateinit var container: AppContainer
-    private lateinit var windowManager: WindowManager
-    private var bubbleView: ImageView? = null
-    private var layoutParams: WindowManager.LayoutParams? = null
     private var conversationId: Long? = null
     private var isBusy = false
     private var wakeWordJob: Job? = null
@@ -82,7 +68,7 @@ class OverlayService : Service() {
         super.onCreate()
         container = (applicationContext as JarvisApplication).container
         startForegroundNotification()
-        addBubble()
+        installAutomationVoiceFeedback()
         startWakeWordLoop()
     }
 
@@ -93,19 +79,55 @@ class OverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         wakeWordJob?.cancel()
+        com.jarvis.assistant.accessibility.JarvisAccessibilityService.onStepEvent = null
         serviceScope.cancel()
         container.voiceActivityDetector.stop()
         container.speechToTextManager.cancel()
-        bubbleView?.let { runCatching { windowManager.removeView(it) } }
-        bubbleView = null
     }
+
+    /** Speaks concise live progress for multi-step Accessibility automation. */
+    private fun installAutomationVoiceFeedback() {
+        com.jarvis.assistant.accessibility.JarvisAccessibilityService.onStepEvent = { current, total, label, success ->
+            serviceScope.launch {
+                when (success) {
+                    null -> speakStatus("Step $current of $total: ${friendlyStep(label)}")
+                    true -> {
+                        // Keep successful step feedback short; the final task result is spoken separately.
+                        if (current == total) speakStatus("Step $current of $total complete.")
+                    }
+                    false -> speakStatus("Step $current of $total failed: ${friendlyStep(label)}. I couldn't do that step.")
+                }
+            }
+        }
+    }
+
+    private suspend fun speakStatus(text: String) {
+        setState(VoiceState.SPEAKING)
+        val prefs = container.securePrefs
+        container.textToSpeechManager.setRate(prefs.speechRate)
+        val voiceName = prefs.voiceName ?: container.textToSpeechManager.autoSelectMaleVoice()?.also { prefs.voiceName = it }
+        container.textToSpeechManager.setVoice(voiceName)
+        container.textToSpeechManager.speak(text)
+        if (!isBusy) setState(VoiceState.IDLE)
+    }
+
+    private fun friendlyStep(label: String): String = label
+        .replace("TAP ", "tap ", ignoreCase = true)
+        .replace("TYPE ", "type ", ignoreCase = true)
+        .replace("LONG_PRESS ", "long-press ", ignoreCase = true)
+        .replace("SCROLL", "scroll", ignoreCase = true)
+        .replace("BACK", "go back", ignoreCase = true)
+        .replace("HOME", "go home", ignoreCase = true)
+        .replace("SUBMIT", "submit the field", ignoreCase = true)
+        .replace("TAP FIRST RESULT", "open the first result", ignoreCase = true)
+        .replace("WAIT", "wait", ignoreCase = true)
 
     // ------------------------------------------------------------------------------ wake word
 
     /**
      * Runs for the whole life of the service. When the user has turned "Always listening" on
      * in Settings, this repeatedly listens for short bursts of speech and checks each one for
-     * the wake word ("Jarvis"). It backs off whenever the bubble is busy with a manual tap, and
+     * the wake word ("Jarvis"). It backs off whenever JARVIS is busy with another task, and
      * re-checks the Settings toggle on every loop so turning it off takes effect within ~1s
      * without needing to restart the service.
      *
@@ -116,17 +138,66 @@ class OverlayService : Service() {
      */
     private fun startWakeWordLoop() {
         wakeWordJob = serviceScope.launch {
+            var permissionWarningSpoken = false
+            var consecutiveSpeechErrors = 0
             while (isActive) {
                 if (!container.securePrefs.wakeWordEnabled || isBusy) {
                     delay(700)
                     continue
                 }
+
+                // Without RECORD_AUDIO, every listen() attempt below fails instantly and
+                // forever — that used to mean total, permanent silence with zero indication of
+                // why. Say it once (not every loop) and back off hard instead of hammering a
+                // recognizer that can never succeed.
+                if (ContextCompat.checkSelfPermission(this@OverlayService, Manifest.permission.RECORD_AUDIO)
+                    != PackageManager.PERMISSION_GRANTED
+                ) {
+                    if (!permissionWarningSpoken) {
+                        permissionWarningSpoken = true
+                        isBusy = true
+                        try {
+                            speakStatus("I can't hear anything — microphone permission is missing. Please grant it for JARVIS, then try again.")
+                        } finally {
+                            isBusy = false
+                        }
+                    }
+                    delay(5000)
+                    continue
+                }
+
                 var heard: String? = null
+                var sawError = false
                 runCatching {
                     container.speechToTextManager.listen(languageTag = null).collect { event ->
-                        if (event is SpeechEvent.FinalResult) heard = event.text
+                        when (event) {
+                            is SpeechEvent.FinalResult -> heard = event.text
+                            is SpeechEvent.Error -> sawError = true
+                            else -> {}
+                        }
+                    }
+                }.onFailure { sawError = true }
+
+                if (heard != null) {
+                    consecutiveSpeechErrors = 0
+                } else if (sawError) {
+                    consecutiveSpeechErrors++
+                    // A handful of "no speech"/timeout errors in a row is completely normal for
+                    // continuous listening (most of the time nobody's talking to it). A long,
+                    // unbroken run instead points to something actually wrong (recognizer stuck,
+                    // no network for a cloud-backed recognizer, engine busy repeatedly) — say so
+                    // once so the user isn't left wondering why nothing ever happens.
+                    if (consecutiveSpeechErrors == 15 && !isBusy) {
+                        isBusy = true
+                        try {
+                            speakStatus("I'm having trouble hearing right now — you can still open JARVIS directly to give a command.")
+                        } finally {
+                            isBusy = false
+                        }
+                        consecutiveSpeechErrors = 0
                     }
                 }
+
                 if (isBusy || !container.securePrefs.wakeWordEnabled) continue
 
                 val afterWakeWord = heard?.let { extractAfterWakeWord(it) }
@@ -135,7 +206,7 @@ class OverlayService : Service() {
                     try {
                         if (afterWakeWord.isBlank()) {
                             // Just "Jarvis" was said with nothing after it — listen once more
-                            // for the actual request, same as tapping the bubble.
+                            // for the actual request.
                             runVoiceTurn()
                         } else {
                             var bargedIn = processCommand(afterWakeWord)
@@ -182,9 +253,9 @@ class OverlayService : Service() {
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
         val contentText = if (container.securePrefs.wakeWordEnabled) {
-            "Say \"Jarvis\" anytime, or tap the floating icon."
+            "Always listening for \"Jarvis\". No floating microphone."
         } else {
-            "Tap the floating icon to talk to JARVIS from any app."
+            "Background JARVIS is running. Enable Wake Word for hands-free use."
         }
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("JARVIS is running in the background")
@@ -199,108 +270,7 @@ class OverlayService : Service() {
         }
     }
 
-    // ---------------------------------------------------------------------------- bubble view
-
-    private fun addBubble() {
-        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val view = ImageView(this).apply {
-            setImageResource(android.R.drawable.ic_btn_speak_now)
-            setPadding(28, 28, 28, 28)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(0xCC0A0E14.toInt())
-                setStroke(5, IDLE_COLOR)
-            }
-        }
-        val lp = WindowManager.LayoutParams(
-            150,
-            150,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 300
-        }
-
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-        var moved = false
-
-        view.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = lp.x
-                    initialY = lp.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    moved = false
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = (event.rawX - initialTouchX).toInt()
-                    val dy = (event.rawY - initialTouchY).toInt()
-                    if (abs(dx) > 12 || abs(dy) > 12) moved = true
-                    lp.x = initialX + dx
-                    lp.y = initialY + dy
-                    runCatching { windowManager.updateViewLayout(view, lp) }
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (!moved) onBubbleTapped()
-                    true
-                }
-                else -> false
-            }
-        }
-
-        runCatching { windowManager.addView(view, lp) }
-        bubbleView = view
-        layoutParams = lp
-    }
-
-    private fun setBubbleColor(color: Int) {
-        (bubbleView?.background as? GradientDrawable)?.setStroke(6, color)
-    }
-
-    /** Updates both the floating bubble's ring color and the shared state the live wallpaper
-     * (and anything else in the app) reads to know what JARVIS is doing right now. */
-    private fun setState(voiceState: VoiceState) {
-        val color = when (voiceState) {
-            VoiceState.LISTENING -> LISTENING_COLOR
-            VoiceState.THINKING -> THINKING_COLOR
-            VoiceState.SPEAKING -> SPEAKING_COLOR
-            VoiceState.ERROR, VoiceState.IDLE -> IDLE_COLOR
-        }
-        setBubbleColor(color)
-        JarvisGlobalState.update(voiceState)
-    }
-
     // -------------------------------------------------------------------------- voice pipeline
-
-    private fun onBubbleTapped() {
-        if (isBusy) {
-            // Tapping again mid-session cancels it — a manual "never mind".
-            container.textToSpeechManager.stop()
-            container.voiceActivityDetector.stop()
-            container.speechToTextManager.cancel()
-            pendingConfirmation = null
-            pendingPlan = null
-            container.taskEngine.cancel()
-            isBusy = false
-            setState(VoiceState.IDLE)
-            return
-        }
-        isBusy = true
-        serviceScope.launch {
-            runVoiceTurn()
-            isBusy = false
-            setState(VoiceState.IDLE)
-        }
-    }
 
     private suspend fun runVoiceTurn(depth: Int = 0) {
         if (depth > 4) return
@@ -329,10 +299,12 @@ class OverlayService : Service() {
             val convId = ensureConversation()
             container.conversationRepository.addMessage(convId, "user", text)
             if (command is JarvisCommand.StopAction) container.taskEngine.cancel()
+            val currentApp = container.phoneContextEngine.snapshot().appLabel
+            speakStatus("I will ${command.describe().removeSuffix(".").removeSuffix("?")}${currentApp?.let { " on $it" } ?: ""}.")
             val result = container.actionExecutor.execute(command)
             val reply = when (result) {
-                is ExecutionResult.Success -> command.describe().removeSuffix(".").removeSuffix("?")
-                is ExecutionResult.Failure -> result.message
+                is ExecutionResult.Success -> "Done. ${result.message}"
+                is ExecutionResult.Failure -> "Command failed: ${result.message} ${failureGuidance(result.message)}"
             }
             container.conversationRepository.addMessage(convId, "assistant", reply)
             return speakWithBargeIn(reply)
@@ -367,8 +339,21 @@ class OverlayService : Service() {
                             pendingPlan = plan.actions
                             speakWithBargeIn("I have a multi-step task ready. ${plan.actions.size} actions. Say yes or no.")
                         } else {
-                            val task = container.taskEngine.run(text, plan.actions)
-                            val reply = if (task.status.name == "COMPLETED") "Task completed." else "I couldn't complete the task."
+                            speakStatus("I will perform ${plan.actions.size} steps and verify each one.")
+                            val task = container.taskEngine.run(text, plan.actions) { update ->
+                                if (update.failedSteps.isNotEmpty() && update.currentStep > 0) {
+                                    // The TaskEngine has already bounded retries; the final failure is
+                                    // announced below with a useful next step instead of looping.
+                                }
+                            }
+                            val reply = when (task.status) {
+                                com.jarvis.assistant.agent.TaskStatus.COMPLETED -> "Task completed successfully."
+                                com.jarvis.assistant.agent.TaskStatus.CANCELLED -> "Task cancelled."
+                                else -> {
+                                    val detail = task.failedSteps.lastOrNull()?.substringAfter(": ")
+                                    "Command failed${detail?.let { ": $it" } ?: ""}. ${failureGuidance(detail ?: "The required screen element was not available.")}"
+                                }
+                            }
                             speakWithBargeIn(reply)
                         }
                     }
@@ -382,8 +367,14 @@ class OverlayService : Service() {
                         speakWithBargeIn(screenText)
                     }
                     command != null && !container.confirmationManager.required(command) -> {
-                        container.actionExecutor.execute(command)
-                        speakWithBargeIn(result.replyText)
+                        speakStatus("I will ${command.describe().removeSuffix(".").removeSuffix("?")}.")
+                        val execution = container.actionExecutor.execute(command)
+                        val reply = when (execution) {
+                            is ExecutionResult.Success -> result.replyText.ifBlank { "Done." }
+                            is ExecutionResult.Failure -> "Command failed: ${execution.message} ${failureGuidance(execution.message)}"
+                        }
+                        container.conversationRepository.addMessage(convId, "assistant", reply)
+                        speakWithBargeIn(reply)
                     }
                     command != null -> {
                         // Sensitive action — ask out loud instead of silently guessing or
@@ -413,10 +404,12 @@ class OverlayService : Service() {
                 val reply = when (result) {
                     is ExecutionResult.Success -> if (pending is JarvisCommand.SendWhatsAppMessage) {
                         // The message is now typed and ready — send it, then confirm out loud.
-                        container.actionExecutor.execute(JarvisCommand.SendPendingMessage)
-                        "Sent."
+                        when (val sendResult = container.actionExecutor.execute(JarvisCommand.SendPendingMessage)) {
+                            is ExecutionResult.Success -> "Sent."
+                            is ExecutionResult.Failure -> "Command failed while sending: ${sendResult.message} ${failureGuidance(sendResult.message)}"
+                        }
                     } else "Done."
-                    is ExecutionResult.Failure -> result.message
+                    is ExecutionResult.Failure -> "Command failed: ${result.message} ${failureGuidance(result.message)}"
                 }
                 container.conversationRepository.addMessage(convId, "assistant", reply)
                 speakWithBargeIn(reply)
@@ -473,6 +466,19 @@ class OverlayService : Service() {
         container.textToSpeechManager.speak(text)
         container.voiceActivityDetector.stop()
         return interrupted.get()
+    }
+
+    private fun failureGuidance(message: String): String {
+        val m = message.lowercase()
+        return when {
+            "accessibility" in m || "screen automation" in m -> "Please enable JARVIS Accessibility and Screen automation in Settings, then try again."
+            "isn't installed" in m || "not installed" in m -> "Please check the app name or install that app first."
+            "permission" in m -> "Please grant the required Android permission and try again."
+            "search" in m -> "Please open the target app and make sure its search field is visible."
+            "send" in m -> "Please make sure the correct chat is open and the Send button is visible."
+            "volume" in m -> "Please check that Android allows volume control for the selected audio stream."
+            else -> "I stopped safely instead of making random taps. You can retry after checking the current screen."
+        }
     }
 
     private suspend fun ensureConversation(): Long {

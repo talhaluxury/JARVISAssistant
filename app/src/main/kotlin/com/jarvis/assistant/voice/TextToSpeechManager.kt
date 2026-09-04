@@ -25,7 +25,16 @@ class TextToSpeechManager(context: Context) {
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
             ready = status == TextToSpeech.SUCCESS
-            if (ready) applyVoice(pendingVoiceName)
+            if (ready) {
+                // Default to the best male-sounding voice exposed by the installed TTS engine.
+                // A user-selected voice still wins when one has been explicitly saved.
+                val requested = pendingVoiceName
+                if (requested != null) {
+                    applyVoice(requested)
+                } else {
+                    autoSelectMaleVoice()?.let(::applyVoice)
+                }
+            }
         }
     }
 

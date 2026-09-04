@@ -62,7 +62,7 @@ class SecurePrefs(context: Context) {
         get() = prefs.getBoolean(KEY_CONFIRM_EVERY_ACTION, false)
         set(value) = prefs.edit().putBoolean(KEY_CONFIRM_EVERY_ACTION, value).apply()
 
-    /** Whether the floating background mic bubble should be running. */
+    /** Whether the background JARVIS foreground service should be running. */
     var backgroundJarvisEnabled: Boolean
         get() = prefs.getBoolean(KEY_BACKGROUND_JARVIS, false)
         set(value) = prefs.edit().putBoolean(KEY_BACKGROUND_JARVIS, value).apply()

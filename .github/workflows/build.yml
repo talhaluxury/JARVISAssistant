@@ -2,11 +2,8 @@ name: Build JARVIS APK
 
 on:
   push:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
-
-permissions:
-  contents: read
+    branches: [ "main" ]
+  workflow_dispatch: {}
 
 jobs:
   build:
@@ -19,24 +16,23 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-          cache: gradle
-
-      - name: Set up Gradle 8.7
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+          java-version: "17"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK components
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      # This project ships without a committed Gradle wrapper (no gradlew / gradle-wrapper.jar),
+      # so we install Gradle directly here instead of relying on ./gradlew, which would otherwise
+      # fail immediately with "gradlew: No such file or directory" on every run.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
 
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: jarvis-debug-apk
