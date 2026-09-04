@@ -10,6 +10,7 @@ import com.jarvis.assistant.ai.PromptBuilder
 import com.jarvis.assistant.command.CommandEngine
 import com.jarvis.assistant.command.ExecutionResult
 import com.jarvis.assistant.command.JarvisCommand
+import com.jarvis.assistant.command.LocalIntentRouter
 import com.jarvis.assistant.command.describe
 import com.jarvis.assistant.command.requiresConfirmation
 import com.jarvis.assistant.data.local.db.entity.ConversationEntity
@@ -158,6 +159,30 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     fun sendMessage(text: String, speakReply: Boolean) {
         if (text.isBlank()) return
         viewModelScope.launch {
+            // Routing-critical commands (scroll, back, home, search-here, open app, stop) never
+            // touch the AI — instant, always acts on the current foreground app, and works even
+            // fully offline / without an API key configured.
+            LocalIntentRouter.match(text)?.let { command ->
+                val conversationId = ensureConversation(text)
+                container.conversationRepository.addMessage(conversationId, "user", text)
+                if (command == JarvisCommand.StopAction) {
+                    container.textToSpeechManager.stop()
+                    container.voiceActivityDetector.stop()
+                    container.speechToTextManager.cancel()
+                }
+                val result = container.actionExecutor.execute(command)
+                val reply = when (result) {
+                    is ExecutionResult.Success -> command.describe().removeSuffix(".").removeSuffix("?")
+                    is ExecutionResult.Failure -> result.message
+                }
+                container.conversationRepository.addMessage(conversationId, "assistant", reply)
+                _lastResponse.value = reply
+                _statusText.value = "SYSTEM READY"
+                log("ACTION: ${command::class.simpleName?.uppercase()}")
+                if (speakReply) speak(reply) else _voiceState.value = VoiceState.IDLE
+                return@launch
+            }
+
             refreshConnectivity()
             val conversationId = ensureConversation(text)
             container.conversationRepository.addMessage(conversationId, "user", text)
@@ -181,7 +206,9 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             val memoryContext = container.memoryRepository.getAllAsPromptContext()
-            val systemPrompt = PromptBuilder.systemPrompt(memoryContext, languageHint = text) +
+            val phoneContext = container.phoneContextEngine.snapshot().toPromptString()
+            val appRegistry = container.appRegistry.compactPrompt()
+            val systemPrompt = PromptBuilder.systemPrompt(memoryContext, languageHint = text, phoneContext = phoneContext, appRegistry = appRegistry) +
                 if (searchContext.isNotBlank()) "\n\nRecent web search results for this question:\n$searchContext" else ""
 
             val history = container.conversationRepository.getHistory(conversationId)
@@ -268,6 +295,11 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             _statusText.value = "EXECUTING: $label"
             log("ACTION: $label")
             val result = container.actionExecutor.execute(pending.command)
+            // A confirmed WhatsApp message is typed and waiting — actually send it now that
+            // the user has said yes. The AI never gets a direct path to the Send button itself.
+            if (result is ExecutionResult.Success && pending.command is JarvisCommand.SendWhatsAppMessage) {
+                container.actionExecutor.execute(JarvisCommand.SendPendingMessage)
+            }
             _statusText.value = when (result) {
                 is ExecutionResult.Success -> "TASK COMPLETE"
                 is ExecutionResult.Failure -> result.message

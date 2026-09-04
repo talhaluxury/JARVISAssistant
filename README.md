@@ -189,3 +189,22 @@ Open the failed step in the Actions log — the two most likely causes on a firs
 4. **Phase 4** (partial): wake-word toggle exists in Settings with an explanation; the
    foreground-service wiring to make it actually always-listening is the next build step,
    and it's additive — it won't require touching the AI/command/UI code above.
+
+## Advanced Mobile Agent upgrade
+
+The project now contains an in-place agent layer under `com.jarvis.assistant.agent`:
+
+- `PhoneContextEngine` — bounded phone/device state snapshot.
+- `AppRegistry` — launchable-app discovery and name resolution.
+- `PermissionManager` — READY / REQUIRED / OPTIONAL capability reporting.
+- `ConfirmationManager` — centralized risk/confirmation policy.
+- `AgentPlanner` — validates bounded `AGENT_PLAN` JSON into the existing command whitelist.
+- `TaskEngine` — sequential execute → re-scan/verify → bounded retry → completion/cancellation loop.
+
+The existing Accessibility service was extended with richer screen metadata (role, selected/enabled
+state and bounds), foreground-package discovery, automation status and failure tracking. The voice
+recognizer now tears down stale sessions before starting another one to reduce recognizer-busy races.
+
+No arbitrary AI-generated Kotlin/Java/Android code is executed. Screen capture remains subject to
+Android's MediaProjection user-consent flow; the agent does not bypass protected content or Android
+security restrictions.

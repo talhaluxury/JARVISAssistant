@@ -87,6 +87,25 @@ object CommandEngine {
 
                 "AUTOMATE" -> parseAutomate(json)
 
+                "SCROLL_DOWN" -> JarvisCommand.ScrollDown
+                "SCROLL_UP" -> JarvisCommand.ScrollUp
+
+                "LONG_PRESS" -> json.optString("target").takeIf { it.isNotBlank() }
+                    ?.let { JarvisCommand.LongPress(it) }
+
+                "SEARCH_CURRENT_APP" -> json.optString("query").takeIf { it.isNotBlank() }
+                    ?.let { JarvisCommand.SearchCurrentApp(it) }
+
+                "TAP_FIRST_RESULT" -> JarvisCommand.TapFirstResult
+
+                "SEND_WHATSAPP_MESSAGE" -> {
+                    val contact = json.optString("contact").takeIf { it.isNotBlank() } ?: return null
+                    val message = json.optString("message").takeIf { it.isNotBlank() } ?: return null
+                    JarvisCommand.SendWhatsAppMessage(contact, message)
+                }
+
+                "STOP" -> JarvisCommand.StopAction
+
                 else -> null
             }
         } catch (e: Exception) {

@@ -15,7 +15,9 @@ import android.provider.MediaStore
 import android.provider.Settings
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
+import com.jarvis.assistant.accessibility.AutomationStep
 import com.jarvis.assistant.accessibility.JarvisAccessibilityService
+import com.jarvis.assistant.data.local.prefs.SecurePrefs
 
 sealed class ExecutionResult {
     data class Success(val message: String) : ExecutionResult()
@@ -29,10 +31,21 @@ sealed class ExecutionResult {
  * device — every action here is exactly what a user could trigger by tapping
  * through the system UI themselves.
  */
-class AndroidActionExecutor(private val context: Context) {
+class AndroidActionExecutor(private val context: Context, private val securePrefs: SecurePrefs) {
+
+    /** Commands that reach into another app's screen — gated by the "Screen automation" switch
+     * in Settings, independent of whether Accessibility itself is on. */
+    private val screenAutomationCommands = setOf(
+        JarvisCommand.ScrollDown::class, JarvisCommand.ScrollUp::class,
+        JarvisCommand.LongPress::class, JarvisCommand.SearchCurrentApp::class,
+        JarvisCommand.TapFirstResult::class, JarvisCommand.SendWhatsAppMessage::class,
+        JarvisCommand.SendPendingMessage::class, JarvisCommand.Automate::class
+    )
 
     fun execute(command: JarvisCommand): ExecutionResult = try {
-        when (command) {
+        if (command::class in screenAutomationCommands && !securePrefs.screenAutomationEnabled) {
+            ExecutionResult.Failure("Screen automation is turned off in Settings.")
+        } else when (command) {
             is JarvisCommand.OpenApp -> openApp(command.target)
             is JarvisCommand.OpenSettings -> openSettings(command.target)
             JarvisCommand.OpenCamera -> launch(Intent(MediaStore.ACTION_IMAGE_CAPTURE))
@@ -58,6 +71,17 @@ class AndroidActionExecutor(private val context: Context) {
             JarvisCommand.MediaPrevious -> dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
             JarvisCommand.ReadScreen -> readScreen()
             is JarvisCommand.SaveTextFile -> saveTextFile(command)
+            JarvisCommand.ScrollDown -> requireAccessibility { JarvisAccessibilityService.scrollDown() }
+            JarvisCommand.ScrollUp -> requireAccessibility { JarvisAccessibilityService.scrollUp() }
+            is JarvisCommand.LongPress -> requireAccessibility { JarvisAccessibilityService.longPress(command.target) }
+            is JarvisCommand.SearchCurrentApp -> requireAccessibility { JarvisAccessibilityService.searchCurrentApp(command.query) }
+            JarvisCommand.TapFirstResult -> requireAccessibility { JarvisAccessibilityService.tapFirstResult() }
+            is JarvisCommand.SendWhatsAppMessage -> sendWhatsAppMessage(command)
+            JarvisCommand.SendPendingMessage -> requireAccessibility { JarvisAccessibilityService.tapSendButton() }
+            JarvisCommand.StopAction -> {
+                JarvisAccessibilityService.cancelQueue()
+                ExecutionResult.Success("Stopped.")
+            }
         }
     } catch (e: ActivityNotFoundException) {
         ExecutionResult.Failure("No app found to handle that action.")
@@ -231,6 +255,39 @@ class AndroidActionExecutor(private val context: Context) {
         "py" -> "text/x-python"
         "kt", "java" -> "text/x-java-source"
         else -> "text/plain"
+    }
+
+    /**
+     * Opens WhatsApp, searches for [command.contact], opens the first matching conversation,
+     * and types [command.message] into the input field — WITHOUT sending it. This command
+     * only ever runs after the caller has already confirmed with the user; the actual tap on
+     * "Send" is a separate SendPendingMessage the caller issues once the user says yes.
+     */
+    private fun sendWhatsAppMessage(command: JarvisCommand.SendWhatsAppMessage): ExecutionResult {
+        if (!JarvisAccessibilityService.isEnabled) {
+            openAccessibilitySettings()
+            return ExecutionResult.Failure(
+                "Phone control isn't turned on yet. Find JARVIS in the Accessibility list and switch it on, then try again."
+            )
+        }
+        val pm = context.packageManager
+        val whatsappPackage = listOf("com.whatsapp", "com.whatsapp.w4b")
+            .firstOrNull { pm.getLaunchIntentForPackage(it) != null }
+            ?: return ExecutionResult.Failure("WhatsApp isn't installed on this phone.")
+        pm.getLaunchIntentForPackage(whatsappPackage)?.let { launch(it) }
+
+        val steps = listOf(
+            AutomationStep.Wait(900),
+            AutomationStep.TapDescription("Search"),
+            AutomationStep.Wait(400),
+            AutomationStep.TypeText(command.contact),
+            AutomationStep.Wait(700),
+            AutomationStep.TapFirstResult,
+            AutomationStep.Wait(900),
+            AutomationStep.TypeText(command.message)
+        )
+        JarvisAccessibilityService.enqueue(steps)
+        return ExecutionResult.Success("Message ready for ${command.contact}.")
     }
 
     private fun runAutomation(command: JarvisCommand.Automate): ExecutionResult {

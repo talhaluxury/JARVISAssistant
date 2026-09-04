@@ -2,6 +2,11 @@ package com.jarvis.assistant.di
 
 import android.content.Context
 import com.jarvis.assistant.ai.AiService
+import com.jarvis.assistant.agent.AppRegistry
+import com.jarvis.assistant.agent.ConfirmationManager
+import com.jarvis.assistant.agent.PermissionManager
+import com.jarvis.assistant.agent.PhoneContextEngine
+import com.jarvis.assistant.agent.TaskEngine
 import com.jarvis.assistant.ai.OpenAiService
 import com.jarvis.assistant.command.AndroidActionExecutor
 import com.jarvis.assistant.data.local.db.JarvisDatabase
@@ -36,5 +41,12 @@ class AppContainer(context: Context) {
     val textToSpeechManager = TextToSpeechManager(context)
     val voiceActivityDetector = VoiceActivityDetector(context)
 
-    val actionExecutor = AndroidActionExecutor(context)
+    val actionExecutor = AndroidActionExecutor(context, securePrefs)
+
+    // Agent layer: perception, capability state, app discovery, confirmation and bounded execution.
+    val phoneContextEngine = PhoneContextEngine(context)
+    val appRegistry = AppRegistry(context)
+    val permissionManager = PermissionManager(context)
+    val confirmationManager = ConfirmationManager(securePrefs)
+    val taskEngine = TaskEngine(actionExecutor, phoneContextEngine)
 }

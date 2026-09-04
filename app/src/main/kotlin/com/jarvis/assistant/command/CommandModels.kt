@@ -44,6 +44,44 @@ sealed class JarvisCommand {
 
     /** Sends the user to the system screen where they can turn the Accessibility Service on. */
     object EnablePhoneControl : JarvisCommand()
+
+    // ---------------------------------------------------------------------------------
+    // Fast, single-shot "current app" navigation commands. These are deliberately kept
+    // separate from Automate: they never require confirmation and never involve the
+    // multi-step queue, so "scroll down" / "back" / "search here" answer instantly and
+    // always act on whatever app is already in the foreground — never JARVIS itself.
+    // ---------------------------------------------------------------------------------
+
+    /** Scrolls the current foreground app's content down/forward. */
+    object ScrollDown : JarvisCommand()
+
+    /** Scrolls the current foreground app's content up/backward. */
+    object ScrollUp : JarvisCommand()
+
+    /** Long-presses whatever on-screen text/label best matches [target] in the current app. */
+    data class LongPress(val target: String) : JarvisCommand()
+
+    /** Finds the search field in whatever app is currently open, types [query], and submits it.
+     * Used for "search karo X" once an app like YouTube/Chrome/Play Store is already open. */
+    data class SearchCurrentApp(val query: String) : JarvisCommand()
+
+    /** Taps the first result-like item on the current screen — "pehli video chalao",
+     * "upar wala kholo", "select the first one". */
+    object TapFirstResult : JarvisCommand()
+
+    /**
+     * Opens WhatsApp, finds [contact]'s conversation, and types [message] into the input
+     * field — but does NOT press send. Sending only happens after the user explicitly
+     * confirms ("haan" / "send karo" / "yes"), handled as a separate follow-up SendPendingMessage.
+     */
+    data class SendWhatsAppMessage(val contact: String, val message: String) : JarvisCommand()
+
+    /** Presses the visible Send button in the current app — used only as the second half of a
+     * confirmed WhatsApp/message send, never issued on its own by the AI. */
+    object SendPendingMessage : JarvisCommand()
+
+    /** Stops whatever JARVIS is currently doing: speaking, or an in-progress automation. */
+    object StopAction : JarvisCommand()
 }
 
 /** Whether a command needs an explicit "yes, do it" from the user before executing. */
@@ -65,14 +103,27 @@ fun JarvisCommand.requiresConfirmation(): Boolean = when (this) {
     JarvisCommand.MediaNext,
     JarvisCommand.MediaPrevious,
     JarvisCommand.ReadScreen,
-    JarvisCommand.EnablePhoneControl -> false
+    JarvisCommand.EnablePhoneControl,
+    // Fast current-app navigation is never destructive/sensitive, so it never blocks on
+    // confirmation — this is what keeps "scroll down" instant and off the JARVIS activity.
+    JarvisCommand.ScrollDown,
+    JarvisCommand.ScrollUp,
+    is JarvisCommand.LongPress,
+    is JarvisCommand.SearchCurrentApp,
+    JarvisCommand.TapFirstResult,
+    JarvisCommand.StopAction,
+    // SendPendingMessage is only ever fired internally, after the user already said "yes" to
+    // a pending SendWhatsAppMessage — it is never something the AI/router issues directly.
+    JarvisCommand.SendPendingMessage -> false
     is JarvisCommand.OpenDialer,
     is JarvisCommand.SetAlarm,
     is JarvisCommand.SetTimer,
     is JarvisCommand.CreateReminder,
     is JarvisCommand.ShareText,
     is JarvisCommand.SaveTextFile,
-    is JarvisCommand.Automate -> true
+    is JarvisCommand.Automate,
+    // Sending a message is the one automation step that always needs a real "yes" first.
+    is JarvisCommand.SendWhatsAppMessage -> true
 }
 
 fun JarvisCommand.describe(): String = when (this) {
@@ -101,4 +152,12 @@ fun JarvisCommand.describe(): String = when (this) {
     JarvisCommand.MediaPrevious -> "Go to previous track."
     JarvisCommand.ReadScreen -> "Read what's on screen."
     is JarvisCommand.SaveTextFile -> "Save \"$filename\" to Downloads?"
+    JarvisCommand.ScrollDown -> "Scroll down."
+    JarvisCommand.ScrollUp -> "Scroll up."
+    is JarvisCommand.LongPress -> "Long-press \"$target\"."
+    is JarvisCommand.SearchCurrentApp -> "Search for \"$query\"."
+    JarvisCommand.TapFirstResult -> "Open the first result."
+    is JarvisCommand.SendWhatsAppMessage -> "Send \"$message\" to $contact on WhatsApp?"
+    JarvisCommand.SendPendingMessage -> "Sending."
+    JarvisCommand.StopAction -> "Stopped."
 }

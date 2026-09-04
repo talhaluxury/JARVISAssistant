@@ -179,6 +179,22 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
+                Text("Screen automation")
+                Text(
+                    "Lets JARVIS tap, type, scroll, and search inside other apps (WhatsApp, " +
+                        "YouTube, etc.). Turn this off to restrict JARVIS to opening apps and basic " +
+                        "navigation (back/home/recents) only.",
+                    color = JarvisTextSecondary,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+            Switch(checked = state.screenAutomationEnabled, onCheckedChange = viewModel::updateScreenAutomationEnabled)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text("Background JARVIS (floating mic)")
                 Text(
                     if (state.overlayPermissionGranted)

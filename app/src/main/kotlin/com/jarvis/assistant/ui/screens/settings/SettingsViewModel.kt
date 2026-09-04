@@ -36,6 +36,7 @@ data class SettingsState(
     val networkOnline: Boolean = false,
     val confirmEveryAction: Boolean = false,
     val backgroundJarvisEnabled: Boolean = false,
+    val screenAutomationEnabled: Boolean = true,
     val overlayPermissionGranted: Boolean = false
 )
 
@@ -54,7 +55,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             wakeWordEnabled = prefs.wakeWordEnabled,
             voiceName = prefs.voiceName,
             confirmEveryAction = prefs.confirmEveryAction,
-            backgroundJarvisEnabled = prefs.backgroundJarvisEnabled
+            backgroundJarvisEnabled = prefs.backgroundJarvisEnabled,
+            screenAutomationEnabled = prefs.screenAutomationEnabled
         )
     )
     val state: StateFlow<SettingsState> = _state.asStateFlow()
@@ -149,6 +151,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun updateConfirmEveryAction(enabled: Boolean) {
         prefs.confirmEveryAction = enabled
         _state.value = _state.value.copy(confirmEveryAction = enabled)
+    }
+
+    /** Master kill switch for on-screen automation — tapping/typing/scrolling in other apps.
+     * Plain navigation (back/home/recents) and opening apps still work when this is off. */
+    fun updateScreenAutomationEnabled(enabled: Boolean) {
+        prefs.screenAutomationEnabled = enabled
+        _state.value = _state.value.copy(screenAutomationEnabled = enabled)
     }
 
     /** Opens the system screen to grant "display over other apps" — Android requires this

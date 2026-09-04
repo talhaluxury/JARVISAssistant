@@ -19,10 +19,13 @@ import com.jarvis.assistant.JarvisApplication
 import com.jarvis.assistant.MainActivity
 import com.jarvis.assistant.R
 import com.jarvis.assistant.ai.ChatMessage
+import com.jarvis.assistant.agent.AgentPlanner
 import com.jarvis.assistant.ai.PromptBuilder
 import com.jarvis.assistant.command.CommandEngine
 import com.jarvis.assistant.command.ExecutionResult
 import com.jarvis.assistant.command.JarvisCommand
+import com.jarvis.assistant.command.LocalIntentRouter
+import com.jarvis.assistant.command.describe
 import com.jarvis.assistant.command.requiresConfirmation
 import com.jarvis.assistant.di.AppContainer
 import com.jarvis.assistant.search.needsWebSearch
@@ -53,9 +56,10 @@ import kotlinx.coroutines.launch
  * active — Android requires that for any app using the microphone in the background, and it
  * is JARVIS's only way of telling the user "I can hear you right now."
  *
- * Actions that would normally ask for confirmation are NOT auto-approved here — instead the
- * user is told to open JARVIS to approve them, since a floating bubble has no safe way to
- * show a real confirmation dialog of its own.
+ * Actions that need confirmation are asked out loud ("Send this to Ali? Say yes or no.") and
+ * only carried out on a clear spoken "yes" — a floating bubble has no dialog of its own, so a
+ * genuinely unclear answer falls back to opening JARVIS so the user can approve it there instead
+ * of JARVIS guessing wrong on something sensitive.
  */
 class OverlayService : Service() {
 
@@ -66,6 +70,11 @@ class OverlayService : Service() {
     private var conversationId: Long? = null
     private var isBusy = false
     private var wakeWordJob: Job? = null
+
+    /** A command awaiting a spoken "haan"/"yes" or "nahi"/"no" from the user. */
+    private var pendingConfirmation: JarvisCommand? = null
+    private var pendingPlan: List<JarvisCommand>? = null
+    private val agentPlanner = AgentPlanner()
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -278,6 +287,9 @@ class OverlayService : Service() {
             container.textToSpeechManager.stop()
             container.voiceActivityDetector.stop()
             container.speechToTextManager.cancel()
+            pendingConfirmation = null
+            pendingPlan = null
+            container.taskEngine.cancel()
             isBusy = false
             setState(VoiceState.IDLE)
             return
@@ -304,6 +316,28 @@ class OverlayService : Service() {
 
     /** Returns true if the user started talking again while JARVIS was replying (barge-in). */
     private suspend fun processCommand(text: String): Boolean {
+        // If JARVIS just asked "should I do this?", this utterance is the answer — never
+        // route it through the AI or treat it as a new, unrelated command.
+        pendingConfirmation?.let { pending -> return handlePendingConfirmation(pending, text) }
+        pendingPlan?.let { plan -> return handlePendingPlanConfirmation(plan, text) }
+
+        // Routing-critical commands (scroll, back, home, search-here, open app, stop) are
+        // matched locally first: instant, always acts on the current foreground app, never
+        // opens JARVIS, and works even with no AI configured.
+        LocalIntentRouter.match(text)?.let { command ->
+            setState(VoiceState.THINKING)
+            val convId = ensureConversation()
+            container.conversationRepository.addMessage(convId, "user", text)
+            if (command is JarvisCommand.StopAction) container.taskEngine.cancel()
+            val result = container.actionExecutor.execute(command)
+            val reply = when (result) {
+                is ExecutionResult.Success -> command.describe().removeSuffix(".").removeSuffix("?")
+                is ExecutionResult.Failure -> result.message
+            }
+            container.conversationRepository.addMessage(convId, "assistant", reply)
+            return speakWithBargeIn(reply)
+        }
+
         setState(VoiceState.THINKING)
         val convId = ensureConversation()
         container.conversationRepository.addMessage(convId, "user", text)
@@ -313,7 +347,9 @@ class OverlayService : Service() {
             container.webSearchService.search(text).onSuccess { searchContext = it }
         }
         val memoryContext = container.memoryRepository.getAllAsPromptContext()
-        val systemPrompt = PromptBuilder.systemPrompt(memoryContext, languageHint = text) +
+        val phoneContext = container.phoneContextEngine.snapshot().toPromptString()
+        val appRegistry = container.appRegistry.compactPrompt()
+        val systemPrompt = PromptBuilder.systemPrompt(memoryContext, languageHint = text, phoneContext = phoneContext, appRegistry = appRegistry) +
             if (searchContext.isNotBlank()) "\n\nRecent web search results for this question:\n$searchContext" else ""
         val history = container.conversationRepository.getHistory(convId)
             .takeLast(20)
@@ -324,7 +360,18 @@ class OverlayService : Service() {
             onSuccess = { result ->
                 container.conversationRepository.addMessage(convId, "assistant", result.replyText)
                 val command = CommandEngine.parse(result.commandJson)
+                val plan = agentPlanner.parsePlan(result.commandJson)
                 interrupted = when {
+                    plan != null -> {
+                        if (plan.actions.any { container.confirmationManager.required(it) }) {
+                            pendingPlan = plan.actions
+                            speakWithBargeIn("I have a multi-step task ready. ${plan.actions.size} actions. Say yes or no.")
+                        } else {
+                            val task = container.taskEngine.run(text, plan.actions)
+                            val reply = if (task.status.name == "COMPLETED") "Task completed." else "I couldn't complete the task."
+                            speakWithBargeIn(reply)
+                        }
+                    }
                     command is JarvisCommand.ReadScreen -> {
                         val screenResult = container.actionExecutor.execute(command)
                         val screenText = when (screenResult) {
@@ -334,16 +381,15 @@ class OverlayService : Service() {
                         container.conversationRepository.addMessage(convId, "assistant", screenText)
                         speakWithBargeIn(screenText)
                     }
-                    command != null && !command.requiresConfirmation() && !container.securePrefs.confirmEveryAction -> {
+                    command != null && !container.confirmationManager.required(command) -> {
                         container.actionExecutor.execute(command)
                         speakWithBargeIn(result.replyText)
                     }
                     command != null -> {
-                        // Sensitive action — hand off to the app rather than guessing or
-                        // silently skipping the user's request.
-                        val said = speakWithBargeIn("That needs your confirmation — please open JARVIS to approve it.")
-                        openAppForConfirmation()
-                        said
+                        // Sensitive action — ask out loud instead of silently guessing or
+                        // forcing the user to leave what they're doing to approve it.
+                        pendingConfirmation = command
+                        speakWithBargeIn("${command.describe()} Say yes or no.")
                     }
                     else -> speakWithBargeIn(result.replyText)
                 }
@@ -353,6 +399,64 @@ class OverlayService : Service() {
             }
         )
         return interrupted
+    }
+
+    /** Handles the user's spoken answer to a pending "should I do this?" question. */
+    private suspend fun handlePendingConfirmation(pending: JarvisCommand, answerText: String): Boolean {
+        val convId = ensureConversation()
+        val answer = LocalIntentRouter.parseConfirmation(answerText)
+        return when (answer) {
+            true -> {
+                pendingConfirmation = null
+                setState(VoiceState.THINKING)
+                val result = container.actionExecutor.execute(pending)
+                val reply = when (result) {
+                    is ExecutionResult.Success -> if (pending is JarvisCommand.SendWhatsAppMessage) {
+                        // The message is now typed and ready — send it, then confirm out loud.
+                        container.actionExecutor.execute(JarvisCommand.SendPendingMessage)
+                        "Sent."
+                    } else "Done."
+                    is ExecutionResult.Failure -> result.message
+                }
+                container.conversationRepository.addMessage(convId, "assistant", reply)
+                speakWithBargeIn(reply)
+            }
+            false -> {
+                pendingConfirmation = null
+                container.conversationRepository.addMessage(convId, "assistant", "Cancelled.")
+                speakWithBargeIn("Cancelled.")
+            }
+            null -> {
+                // Genuinely unclear — safest fallback is to hand off to the app rather than
+                // guess wrong on a sensitive action.
+                pendingConfirmation = null
+                val said = speakWithBargeIn("I didn't catch that — please open JARVIS to approve it.")
+                openAppForConfirmation()
+                said
+            }
+        }
+    }
+
+    private suspend fun handlePendingPlanConfirmation(plan: List<JarvisCommand>, answerText: String): Boolean {
+        val answer = LocalIntentRouter.parseConfirmation(answerText)
+        return when (answer) {
+            true -> {
+                pendingPlan = null
+                setState(VoiceState.THINKING)
+                val task = container.taskEngine.run("confirmed plan", plan)
+                val reply = when (task.status) {
+                    com.jarvis.assistant.agent.TaskStatus.COMPLETED -> "Task completed."
+                    com.jarvis.assistant.agent.TaskStatus.CANCELLED -> "Cancelled."
+                    else -> "I couldn't complete the task."
+                }
+                speakWithBargeIn(reply)
+            }
+            false -> {
+                pendingPlan = null
+                speakWithBargeIn("Cancelled.")
+            }
+            null -> speakWithBargeIn("Please say yes or no.")
+        }
     }
 
     private suspend fun speakWithBargeIn(text: String): Boolean {
@@ -394,6 +498,6 @@ class OverlayService : Service() {
         private val SPEAKING_COLOR = 0xFF34D399.toInt()
 
         /** Checked case-insensitively against each heard phrase; add more variants if needed. */
-        private val WAKE_WORDS = listOf("hey jarvis", "jarvis", "جارویس")
+        private val WAKE_WORDS = listOf("hey jarvis", "jarvis", "جارویس", "जार्विस", "ہے جارویس")
     }
 }

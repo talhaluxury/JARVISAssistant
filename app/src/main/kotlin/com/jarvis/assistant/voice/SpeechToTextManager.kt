@@ -38,6 +38,11 @@ class SpeechToTextManager(private val context: Context) {
             return@callbackFlow
         }
 
+        // A single recognizer instance is allowed at a time. Cancel any stale session before
+        // creating the next one; this prevents ERROR_RECOGNIZER_BUSY and leaked callbacks when
+        // wake-word, barge-in, or manual listening transitions happen close together.
+        recognizer?.runCatching { stopListening(); cancel(); destroy() }
+        recognizer = null
         val sr = SpeechRecognizer.createSpeechRecognizer(context)
         recognizer = sr
 
@@ -99,9 +104,9 @@ class SpeechToTextManager(private val context: Context) {
         }
     }
 
+    @Synchronized
     fun cancel() {
-        recognizer?.stopListening()
-        recognizer?.destroy()
+        recognizer?.runCatching { stopListening(); cancel(); destroy() }
         recognizer = null
     }
 

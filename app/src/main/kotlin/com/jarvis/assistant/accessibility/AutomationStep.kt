@@ -26,4 +26,16 @@ sealed class AutomationStep {
     object PressHome : AutomationStep()
     object ScrollForward : AutomationStep()
     object ScrollBackward : AutomationStep()
+
+    /** Long-press a node whose visible text matches (contains, case-insensitive). */
+    data class LongPressText(val text: String) : AutomationStep()
+
+    /** Long-press a node whose content description matches (contains, case-insensitive). */
+    data class LongPressDescription(val description: String) : AutomationStep()
+
+    /** Submits the currently focused editable field (search boxes, message inputs). */
+    object SubmitField : AutomationStep()
+
+    /** Taps the first clickable "result-like" item on screen (e.g. "pehli video chalao"). */
+    object TapFirstResult : AutomationStep()
 }

@@ -67,6 +67,19 @@ class SecurePrefs(context: Context) {
         get() = prefs.getBoolean(KEY_BACKGROUND_JARVIS, false)
         set(value) = prefs.edit().putBoolean(KEY_BACKGROUND_JARVIS, value).apply()
 
+    /** Master switch for on-screen automation (tapping/typing/scrolling in other apps). Turning
+     * this off still allows plain navigation (back/home/recents) but blocks AUTOMATE, search-in-app,
+     * WhatsApp sending, etc. — a quick "phone control" kill switch independent of Accessibility. */
+    var screenAutomationEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SCREEN_AUTOMATION, true)
+        set(value) = prefs.edit().putBoolean(KEY_SCREEN_AUTOMATION, value).apply()
+
+    /** How many silent-follow-up turns a wake-word/task session stays open for before JARVIS
+     * falls back to needing the wake word again. */
+    var conversationSessionTurns: Int
+        get() = prefs.getInt(KEY_CONVERSATION_TURNS, 4)
+        set(value) = prefs.edit().putInt(KEY_CONVERSATION_TURNS, value.coerceIn(1, 10)).apply()
+
     fun isConfigured(): Boolean = !aiApiKey.isNullOrBlank()
 
     companion object {
@@ -80,5 +93,7 @@ class SecurePrefs(context: Context) {
         private const val KEY_WAKE_WORD = "wake_word_enabled"
         private const val KEY_CONFIRM_EVERY_ACTION = "confirm_every_action"
         private const val KEY_BACKGROUND_JARVIS = "background_jarvis_enabled"
+        private const val KEY_SCREEN_AUTOMATION = "screen_automation_enabled"
+        private const val KEY_CONVERSATION_TURNS = "conversation_session_turns"
     }
 }
