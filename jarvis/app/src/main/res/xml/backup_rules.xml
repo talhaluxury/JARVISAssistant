@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Exclude encrypted prefs (API keys) and the local DB from auto backup -->
+    <exclude domain="sharedpref" path="jarvis_secure_prefs.xml" />
+    <exclude domain="database" path="jarvis_db" />
+</full-backup-content>
