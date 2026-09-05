@@ -86,6 +86,10 @@ class AndroidActionExecutor(private val context: Context, private val securePref
                 JarvisAccessibilityService.cancelQueue()
                 ExecutionResult.Success("Stopped.")
             }
+            JarvisCommand.ActivateHud, JarvisCommand.StandbyHud, JarvisCommand.FullHud,
+            JarvisCommand.MinimalHud, JarvisCommand.PowerSavingHud, JarvisCommand.ShowBattery,
+            JarvisCommand.ShowNetwork, JarvisCommand.ShowNotificationsHud, JarvisCommand.ShowSystemStatus ->
+                ExecutionResult.Success(command.describe())
         }
     } catch (e: ActivityNotFoundException) {
         ExecutionResult.Failure("No app found to handle that action.")
