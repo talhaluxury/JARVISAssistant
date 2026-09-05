@@ -125,6 +125,7 @@ class LiveWallpaperService : WallpaperService() {
             }
             drawScanline(c, w, h)
             drawHeader(c, w)
+            if (state.mode != HudMode.MINIMAL) drawDayRing(c, w, h)
             val dimAlpha = ((1f - settings.brightness.coerceIn(.1f, 1f)) * 170f).toInt()
             if (dimAlpha > 0) {
                 p.style = Paint.Style.FILL
@@ -201,8 +202,23 @@ class LiveWallpaperService : WallpaperService() {
             p.color = Color.WHITE
             c.drawCircle(cx, cy, rr * .10f, p)
 
+            drawTickRing(c, cx, cy, rr * 1.62f, color)
             drawWaveform(c, cx, cy, rr, color)
             drawCoreLabels(c, cx, cy, rr, color)
+        }
+
+        /** Radial tick marks around the outer edge of the core — the "technical dial" look. */
+        private fun drawTickRing(c: Canvas, cx: Float, cy: Float, r: Float, color: Int, count: Int = 72) {
+            ringPaint.color = Color.argb(110, Color.red(color), Color.green(color), Color.blue(color))
+            for (i in 0 until count) {
+                val major = i % 6 == 0
+                ringPaint.strokeWidth = if (major) 2f else 1f
+                val a = Math.toRadians((i * 360.0 / count) + phase * 6.0)
+                val len = if (major) r * .06f else r * .03f
+                val cosA = cos(a).toFloat()
+                val sinA = sin(a).toFloat()
+                c.drawLine(cx + cosA * r, cy + sinA * r, cx + cosA * (r - len), cy + sinA * (r - len), ringPaint)
+            }
         }
 
         private fun drawWaveform(c: Canvas, cx: Float, cy: Float, r: Float, color: Int) {
@@ -234,9 +250,28 @@ class LiveWallpaperService : WallpaperService() {
             val rightX = w * .945f
             val top = h * .17f
             val gap = h * .115f
-            if (settings.showBattery) drawPanel(c, leftX, top, "BATTERY", telemetry.batteryPercent?.let { "$it%" } ?: "UNAVAILABLE", state.focus == "BATTERY")
-            if (settings.showRam) drawPanel(c, leftX, top + gap, "RAM", telemetry.ramTotalGb?.let { "${fmt(telemetry.ramUsedGb)} / ${fmt(it)} GB" } ?: "UNAVAILABLE", state.focus == "SYSTEM")
-            if (settings.showStorage) drawPanel(c, leftX, top + gap * 2, "STORAGE", telemetry.storageTotalGb?.let { "${fmt(telemetry.storageUsedGb)} / ${fmt(it)} GB" } ?: "UNAVAILABLE", state.focus == "SYSTEM")
+
+            // Ring-gauge cluster, top-left — mirrors the classic circular-meter HUD skin look.
+            val gaugeR = min(w, h) * .052f
+            val gaugeY = h * .12f
+            var gx = leftX + gaugeR
+            if (settings.showBattery) {
+                drawRingGauge(c, gx, gaugeY, gaugeR, "BATTERY", telemetry.batteryPercent?.let { "$it%" } ?: "—",
+                    telemetry.batteryPercent?.let { it / 100f }, state.focus == "BATTERY")
+                gx += gaugeR * 2.6f
+            }
+            if (settings.showRam) {
+                val pct = if (telemetry.ramUsedGb != null && telemetry.ramTotalGb != null && telemetry.ramTotalGb!! > 0f)
+                    telemetry.ramUsedGb!! / telemetry.ramTotalGb!! else null
+                drawRingGauge(c, gx, gaugeY, gaugeR, "RAM", pct?.let { "${(it * 100).toInt()}%" } ?: "—", pct, state.focus == "SYSTEM")
+                gx += gaugeR * 2.6f
+            }
+            if (settings.showStorage) {
+                val pct = if (telemetry.storageUsedGb != null && telemetry.storageTotalGb != null && telemetry.storageTotalGb!! > 0f)
+                    telemetry.storageUsedGb!! / telemetry.storageTotalGb!! else null
+                drawRingGauge(c, gx, gaugeY, gaugeR, "DISK", pct?.let { "${(it * 100).toInt()}%" } ?: "—", pct, state.focus == "SYSTEM")
+            }
+
             if (settings.showNetwork) {
                 drawPanelRight(c, rightX, top, "NETWORK", status(telemetry.networkConnected), state.focus == "NETWORK")
                 drawPanelRight(c, rightX, top + gap, "WIFI", status(telemetry.wifiConnected), state.focus == "NETWORK")
@@ -254,6 +289,27 @@ class LiveWallpaperService : WallpaperService() {
             if (settings.showNotifications) telemetry.notificationCount?.let {
                 c.drawText("NOTIFICATIONS ${it.toString().padStart(2, '0')}", cx, h * .835f, textPaint)
             }
+        }
+
+        /** A circular donut meter with a value in the center and a label underneath — the
+         * ring-gauge look from classic Rainmeter-style HUD skins (CPU/RAM/battery dials). */
+        private fun drawRingGauge(c: Canvas, cx: Float, cy: Float, r: Float, label: String, valueText: String, percent: Float?, focused: Boolean) {
+            val color = if (focused) cyan else Color.rgb(90, 190, 215)
+            rect.set(cx - r, cy - r, cx + r, cy + r)
+            ringPaint.strokeWidth = r * .16f
+            ringPaint.color = Color.argb(55, Color.red(cyanSoft), Color.green(cyanSoft), Color.blue(cyanSoft))
+            c.drawArc(rect, 0f, 360f, false, ringPaint)
+            if (percent != null) {
+                ringPaint.color = Color.argb(230, Color.red(color), Color.green(color), Color.blue(color))
+                c.drawArc(rect, -90f, percent.coerceIn(0f, 1f) * 360f, false, ringPaint)
+            }
+            textPaint.textAlign = Paint.Align.CENTER
+            textPaint.textSize = r * .4f
+            textPaint.color = color
+            c.drawText(valueText, cx, cy + r * .15f, textPaint)
+            textPaint.textSize = r * .24f
+            textPaint.color = Color.argb(190, 150, 210, 225)
+            c.drawText(label, cx, cy + r * 1.45f, textPaint)
         }
 
         private fun drawPanel(c: Canvas, x: Float, y: Float, label: String, value: String, focused: Boolean) {
@@ -306,6 +362,25 @@ class LiveWallpaperService : WallpaperService() {
                 textPaint.textSize = 8f
                 c.drawText(date.uppercase(), w - 18f, 42f, textPaint)
             }
+        }
+
+        /** Circular "day" dial in the corner, in the spirit of the reference HUD skin's date ring. */
+        private fun drawDayRing(c: Canvas, w: Float, h: Float) {
+            val r = min(w, h) * .045f
+            val cx = w - r * 1.6f
+            val cy = r * 2.4f
+            val day = java.util.Calendar.getInstance()
+            rect.set(cx - r, cy - r, cx + r, cy + r)
+            ringPaint.strokeWidth = 2.2f
+            ringPaint.color = Color.argb(200, Color.red(cyan), Color.green(cyan), Color.blue(cyan))
+            c.drawArc(rect, -90f, (day.get(java.util.Calendar.DAY_OF_MONTH) / 31f) * 360f, false, ringPaint)
+            ringPaint.color = Color.argb(45, Color.red(cyanSoft), Color.green(cyanSoft), Color.blue(cyanSoft))
+            ringPaint.strokeWidth = 1.2f
+            c.drawArc(rect, 0f, 360f, false, ringPaint)
+            textPaint.textAlign = Paint.Align.CENTER
+            textPaint.textSize = r * .8f
+            textPaint.color = cyan
+            c.drawText(day.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0'), cx, cy + r * .3f, textPaint)
         }
 
         private fun phaseStep(): Float = when (state.mode) {

@@ -168,6 +168,20 @@ private fun JarvisCore(state: JarvisHudState, modifier: Modifier = Modifier) {
         val r = size.minDimension * .38f
         drawCircle(JarvisCyan.copy(alpha = .05f), r * 1.8f)
         drawCircle(JarvisCyan.copy(alpha = .16f), r * 1.25f, style = Stroke(2f))
+        val tickR = r * 1.28f
+        for (i in 0 until 60) {
+            val major = i % 5 == 0
+            val a = Math.toRadians((i * 6.0) + angle)
+            val len = if (major) tickR * .07f else tickR * .035f
+            val cosA = kotlin.math.cos(a).toFloat()
+            val sinA = kotlin.math.sin(a).toFloat()
+            drawLine(
+                JarvisCyan.copy(alpha = if (major) .55f else .28f),
+                androidx.compose.ui.geometry.Offset(c.x + cosA * tickR, c.y + sinA * tickR),
+                androidx.compose.ui.geometry.Offset(c.x + cosA * (tickR - len), c.y + sinA * (tickR - len)),
+                if (major) 2f else 1f
+            )
+        }
         for (i in 0..3) {
             val rr = r * (0.65f + i * .22f)
             drawArc(JarvisCyan.copy(alpha = .7f - i * .1f), angle * if (i % 2 == 0) 1 else -1, 260f, false, style = Stroke(if (i == 1) 3f else 1.5f, cap = StrokeCap.Round), topLeft = androidx.compose.ui.geometry.Offset(c.x - rr, c.y - rr), size = androidx.compose.ui.geometry.Size(rr * 2, rr * 2))
@@ -196,21 +210,32 @@ private fun HudBackground() {
 
 @Composable
 private fun TelemetryStrip(t: com.jarvis.assistant.hud.DeviceTelemetry) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        TelemetryCell("BAT", t.batteryPercent?.let { "$it%" } ?: "UNAV", Modifier.weight(1f))
-        TelemetryCell("RAM", if (t.ramUsedGb != null && t.ramTotalGb != null) "${"%.1f".format(t.ramUsedGb)}/${"%.1f".format(t.ramTotalGb)}" else "UNAV", Modifier.weight(1f))
-        TelemetryCell("NET", when(t.networkConnected){true->"ON";false->"OFF";null->"UNAV"}, Modifier.weight(1f))
-        TelemetryCell("WIFI", when(t.wifiConnected){true->"ON";false->"OFF";null->"UNAV"}, Modifier.weight(1f))
+    val ramPct = if (t.ramUsedGb != null && t.ramTotalGb != null && t.ramTotalGb!! > 0f) t.ramUsedGb!! / t.ramTotalGb!! else null
+    val storagePct = if (t.storageUsedGb != null && t.storageTotalGb != null && t.storageTotalGb!! > 0f) t.storageUsedGb!! / t.storageTotalGb!! else null
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+        RingGauge("BATTERY", t.batteryPercent?.let { "$it%" } ?: "—", t.batteryPercent?.let { it / 100f })
+        RingGauge("RAM", ramPct?.let { "${(it * 100).toInt()}%" } ?: "—", ramPct)
+        RingGauge("DISK", storagePct?.let { "${(it * 100).toInt()}%" } ?: "—", storagePct)
+        RingGauge("WIFI", when (t.wifiConnected) { true -> "ON"; false -> "OFF"; null -> "—" }, if (t.wifiConnected == true) 1f else 0f)
     }
 }
 
+/** Small circular donut meter — the ring-gauge look from the reference HUD skin. */
 @Composable
-private fun TelemetryCell(label: String, value: String, modifier: Modifier) {
-    Surface(color = androidx.compose.ui.graphics.Color(0x660A1A23), shape = RoundedCornerShape(2.dp), modifier = modifier) {
-        Column(Modifier.padding(6.dp)) {
-            Text(label, color = JarvisTextSecondary, fontSize = 8.sp, fontFamily = FontFamily.Monospace)
-            Text(value, color = JarvisCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+private fun RingGauge(label: String, valueText: String, percent: Float?) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(56.dp)) {
+                val stroke = Stroke(size.minDimension * .14f, cap = StrokeCap.Round)
+                drawArc(JarvisCyan.copy(alpha = .18f), 0f, 360f, false, style = stroke)
+                if (percent != null) {
+                    drawArc(JarvisCyan, -90f, percent.coerceIn(0f, 1f) * 360f, false, style = stroke)
+                }
+            }
+            Text(valueText, color = JarvisCyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
         }
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = JarvisTextSecondary, fontSize = 8.sp, fontFamily = FontFamily.Monospace)
     }
 }
 
