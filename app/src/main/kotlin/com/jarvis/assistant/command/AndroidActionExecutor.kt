@@ -86,6 +86,9 @@ class AndroidActionExecutor(private val context: Context, private val securePref
                 JarvisAccessibilityService.cancelQueue()
                 ExecutionResult.Success("Stopped.")
             }
+            // HUD commands are always intercepted and handled by HudCommandExecutor before
+            // reaching this executor (see AssistantViewModel). These branches only exist to
+            // satisfy the compiler's exhaustiveness check and are not expected to run.
             JarvisCommand.ActivateHud, JarvisCommand.StandbyHud, JarvisCommand.FullHud,
             JarvisCommand.MinimalHud, JarvisCommand.PowerSavingHud, JarvisCommand.ShowBattery,
             JarvisCommand.ShowNetwork, JarvisCommand.ShowNotificationsHud, JarvisCommand.ShowSystemStatus ->
@@ -109,8 +112,22 @@ class AndroidActionExecutor(private val context: Context, private val securePref
         val pm = context.packageManager
         val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val matches = pm.queryIntentActivities(query, 0)
-        val match = matches.firstOrNull { it.loadLabel(pm).toString().equals(name, true) }
-            ?: matches.firstOrNull { it.loadLabel(pm).toString().contains(name, true) }
+        val spoken = name.trim()
+        val match = matches.firstOrNull { it.loadLabel(pm).toString().equals(spoken, true) }
+            ?: matches.firstOrNull { it.loadLabel(pm).toString().contains(spoken, true) }
+            // Speech-to-text often mis-hears trailing/leading words (e.g. "youtube corona sir"
+            // instead of "youtube"). If what was heard CONTAINS a real app's name, use that —
+            // pick the longest matching label so short accidental substrings don't win.
+            ?: matches
+                .filter { spoken.contains(it.loadLabel(pm).toString(), true) }
+                .maxByOrNull { it.loadLabel(pm).toString().length }
+            // Last resort: any shared word (3+ letters) between what was heard and the app name.
+            ?: matches
+                .filter { activity ->
+                    val label = activity.loadLabel(pm).toString().lowercase()
+                    spoken.lowercase().split(" ").any { word -> word.length > 2 && label.contains(word) }
+                }
+                .maxByOrNull { it.loadLabel(pm).toString().length }
             ?: return ExecutionResult.Failure("\"$name\" isn't installed on this phone.")
         val launchIntent = pm.getLaunchIntentForPackage(match.activityInfo.packageName)
             ?: Intent(query).setPackage(match.activityInfo.packageName)
