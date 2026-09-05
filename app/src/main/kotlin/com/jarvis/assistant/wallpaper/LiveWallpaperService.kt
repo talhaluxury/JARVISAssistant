@@ -156,7 +156,7 @@ class LiveWallpaperService : WallpaperService() {
                 else -> 0.7f
             }
             val intensity = settings.animationIntensity
-            val pulse = 1f + sin(phase * 2.0) * (if (active) .055f else .025f) * intensity
+            val pulse = 1f + sin(phase * 2f) * (if (active) .055f else .025f) * intensity
             val rr = r * pulse
             val color = when (state.state) {
                 JarvisHudState.ERROR -> Color.rgb(255, 90, 90)
