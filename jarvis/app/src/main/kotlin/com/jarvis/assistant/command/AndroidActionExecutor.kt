@@ -86,6 +86,13 @@ class AndroidActionExecutor(private val context: Context, private val securePref
                 JarvisAccessibilityService.cancelQueue()
                 ExecutionResult.Success("Stopped.")
             }
+            // HUD commands are always intercepted and handled by HudCommandExecutor before
+            // reaching this executor (see AssistantViewModel). These branches only exist to
+            // satisfy the compiler's exhaustiveness check and are not expected to run.
+            JarvisCommand.ActivateHud, JarvisCommand.StandbyHud, JarvisCommand.FullHud,
+            JarvisCommand.MinimalHud, JarvisCommand.PowerSavingHud, JarvisCommand.ShowBattery,
+            JarvisCommand.ShowNetwork, JarvisCommand.ShowNotificationsHud, JarvisCommand.ShowSystemStatus ->
+                ExecutionResult.Success(command.describe())
         }
     } catch (e: ActivityNotFoundException) {
         ExecutionResult.Failure("No app found to handle that action.")
