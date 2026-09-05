@@ -22,6 +22,16 @@ object LocalIntentRouter {
 
         if (containsAny(text, STOP_WORDS)) return JarvisCommand.StopAction
 
+        if (containsAny(text, ACTIVATE_HUD_WORDS)) return JarvisCommand.ActivateHud
+        if (containsAny(text, STANDBY_HUD_WORDS)) return JarvisCommand.StandbyHud
+        if (containsAny(text, SYSTEM_STATUS_WORDS)) return JarvisCommand.ShowSystemStatus
+        if (containsAny(text, BATTERY_WORDS)) return JarvisCommand.ShowBattery
+        if (containsAny(text, NETWORK_WORDS)) return JarvisCommand.ShowNetwork
+        if (containsAny(text, NOTIFICATION_HUD_WORDS)) return JarvisCommand.ShowNotificationsHud
+        if (containsAny(text, FULL_HUD_WORDS)) return JarvisCommand.FullHud
+        if (containsAny(text, MINIMAL_HUD_WORDS)) return JarvisCommand.MinimalHud
+        if (containsAny(text, POWER_SAVING_WORDS)) return JarvisCommand.PowerSavingHud
+
         if (containsAny(text, SCROLL_DOWN_WORDS)) return JarvisCommand.ScrollDown
         if (containsAny(text, SCROLL_UP_WORDS)) return JarvisCommand.ScrollUp
 
@@ -75,6 +85,16 @@ object LocalIntentRouter {
     }
 
     // --- word lists (kept lowercase, space-normalized) -----------------------------------
+
+    private val ACTIVATE_HUD_WORDS = listOf("activate hud", "hud activate", "hud on", "holographic interface activate", "jarvis activate hud")
+    private val STANDBY_HUD_WORDS = listOf("standby", "hud standby", "stand by", "jarvis standby")
+    private val SYSTEM_STATUS_WORDS = listOf("system status", "phone status", "system report", "show system status", "phone ki status", "mobile ki status")
+    private val BATTERY_WORDS = listOf("show battery", "battery dikhao", "battery status", "battery kitni hai")
+    private val NETWORK_WORDS = listOf("show network", "network status", "wifi status", "network dikhao")
+    private val NOTIFICATION_HUD_WORDS = listOf("show notifications", "notifications dikhao", "notification status")
+    private val FULL_HUD_WORDS = listOf("full hud", "full interface", "complete hud")
+    private val MINIMAL_HUD_WORDS = listOf("minimal hud", "minimal mode")
+    private val POWER_SAVING_WORDS = listOf("power saving", "power saving hud", "save battery")
 
     private val STOP_WORDS = listOf(
         "stop", "cancel", "bas", "ruk jao", "ruko", "cancel karo", "band karo", "خاموش", "رک جاؤ"

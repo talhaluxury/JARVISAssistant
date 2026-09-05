@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import com.jarvis.assistant.accessibility.AutomationStep
 import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 import com.jarvis.assistant.data.local.prefs.SecurePrefs
+import com.jarvis.assistant.notifications.JarvisNotificationListenerService
 
 sealed class ExecutionResult {
     abstract val message: String
@@ -71,6 +72,8 @@ class AndroidActionExecutor(private val context: Context, private val securePref
             JarvisCommand.MediaNext -> dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
             JarvisCommand.MediaPrevious -> dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
             JarvisCommand.ReadScreen -> readScreen()
+            JarvisCommand.ReadNotifications -> readNotifications()
+            JarvisCommand.EnableNotificationAccess -> openNotificationAccessSettings()
             is JarvisCommand.SaveTextFile -> saveTextFile(command)
             JarvisCommand.ScrollDown -> requireAccessibility { JarvisAccessibilityService.scrollDown() }
             JarvisCommand.ScrollUp -> requireAccessibility { JarvisAccessibilityService.scrollUp() }
@@ -100,14 +103,13 @@ class AndroidActionExecutor(private val context: Context, private val securePref
 
     private fun openApp(name: String): ExecutionResult {
         val pm = context.packageManager
-        val apps = pm.getInstalledApplications(0)
-        val match = apps.firstOrNull {
-            pm.getApplicationLabel(it).toString().equals(name, ignoreCase = true)
-        } ?: apps.firstOrNull {
-            pm.getApplicationLabel(it).toString().contains(name, ignoreCase = true)
-        }
-        val launchIntent = match?.let { pm.getLaunchIntentForPackage(it.packageName) }
+        val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val matches = pm.queryIntentActivities(query, 0)
+        val match = matches.firstOrNull { it.loadLabel(pm).toString().equals(name, true) }
+            ?: matches.firstOrNull { it.loadLabel(pm).toString().contains(name, true) }
             ?: return ExecutionResult.Failure("\"$name\" isn't installed on this phone.")
+        val launchIntent = pm.getLaunchIntentForPackage(match.activityInfo.packageName)
+            ?: Intent(query).setPackage(match.activityInfo.packageName)
         return launch(launchIntent)
     }
 
@@ -211,6 +213,16 @@ class AndroidActionExecutor(private val context: Context, private val securePref
         am.dispatchMediaKeyEvent(KeyEvent(eventTime, eventTime, KeyEvent.ACTION_UP, keyCode, 0))
         return ExecutionResult.Success("Done.")
     }
+
+    private fun readNotifications(): ExecutionResult {
+        if (!JarvisNotificationListenerService.isEnabled) {
+            return ExecutionResult.Failure("Notification access is not enabled. Open JARVIS Notification Access in Android Settings first.")
+        }
+        return ExecutionResult.Success(JarvisNotificationListenerService.summary())
+    }
+
+    private fun openNotificationAccessSettings(): ExecutionResult =
+        launch(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
 
     private fun readScreen(): ExecutionResult {
         if (!JarvisAccessibilityService.isEnabled) {

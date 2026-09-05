@@ -11,12 +11,12 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- Post the "listening"/status notification while mic is foreground-active -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- So JARVIS can find and launch any app the user names, for AUTOMATE/OPEN_APP -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Auto-start background JARVIS after the phone reboots, if the user turned it on -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Android 12+ Bluetooth state access when the user grants it. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <application
         android:name=".JarvisApplication"
@@ -72,6 +72,17 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+
+        <service
+            android:name=".notifications.JarvisNotificationListenerService"
+            android:label="JARVIS Notification Access"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <service
             android:name=".wallpaper.LiveWallpaperService"

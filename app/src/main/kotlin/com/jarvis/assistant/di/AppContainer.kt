@@ -3,6 +3,7 @@ package com.jarvis.assistant.di
 import android.content.Context
 import com.jarvis.assistant.ai.AiService
 import com.jarvis.assistant.agent.AppRegistry
+import com.jarvis.assistant.agent.AgentPlanner
 import com.jarvis.assistant.agent.ConfirmationManager
 import com.jarvis.assistant.agent.PermissionManager
 import com.jarvis.assistant.agent.PhoneContextEngine
@@ -48,5 +49,6 @@ class AppContainer(context: Context) {
     val appRegistry = AppRegistry(context)
     val permissionManager = PermissionManager(context)
     val confirmationManager = ConfirmationManager(securePrefs)
+    val agentPlanner = AgentPlanner()
     val taskEngine = TaskEngine(actionExecutor, phoneContextEngine)
 }

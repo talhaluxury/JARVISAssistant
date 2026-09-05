@@ -19,6 +19,9 @@ import com.jarvis.assistant.search.needsWebSearch
 import com.jarvis.assistant.util.NetworkMonitor
 import com.jarvis.assistant.voice.SpeechEvent
 import com.jarvis.assistant.voice.VoiceState
+import com.jarvis.assistant.hud.HudCommandExecutor
+import com.jarvis.assistant.hud.JarvisHudState
+import com.jarvis.assistant.hud.WallpaperEventBus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +33,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
 data class PendingCommand(val command: JarvisCommand, val confirmationText: String)
+data class PendingPlan(val actions: List<JarvisCommand>, val confirmationText: String)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AssistantViewModel(application: Application) : AndroidViewModel(application) {
@@ -47,6 +51,9 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _pendingCommand = MutableStateFlow<PendingCommand?>(null)
     val pendingCommand: StateFlow<PendingCommand?> = _pendingCommand.asStateFlow()
+
+    private val _pendingPlan = MutableStateFlow<PendingPlan?>(null)
+    val pendingPlan: StateFlow<PendingPlan?> = _pendingPlan.asStateFlow()
 
     private val _isOffline = MutableStateFlow(!NetworkMonitor.isOnline(application))
     val isOffline: StateFlow<Boolean> = _isOffline.asStateFlow()
@@ -123,6 +130,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         if (_voiceState.value == VoiceState.LISTENING) return
         _voiceState.value = VoiceState.LISTENING
         _statusText.value = "LISTENING..."
+        WallpaperEventBus.emit(JarvisHudState.LISTENING, "VOICE", "VOICE LISTENING")
 
         viewModelScope.launch {
             container.speechToTextManager.listen(languageTag).collectLatest { event ->
@@ -130,6 +138,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     SpeechEvent.ListeningStarted -> {
                         _voiceState.value = VoiceState.LISTENING
                         _statusText.value = "LISTENING..."
+                        WallpaperEventBus.emit(JarvisHudState.LISTENING, "VOICE", "VOICE LISTENING")
                     }
                     SpeechEvent.ListeningEnded -> { /* result or error follows */ }
                     is SpeechEvent.PartialResult -> _statusText.value = event.text
@@ -170,8 +179,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     container.voiceActivityDetector.stop()
                     container.speechToTextManager.cancel()
                 }
-                val result = container.actionExecutor.execute(command)
-                val reply = when (result) {
+                val hudReply = HudCommandExecutor.execute(getApplication(), command)
+                if (hudReply == null) WallpaperEventBus.emit(JarvisHudState.EXECUTING, "COMMAND", command::class.simpleName?.uppercase() ?: "EXECUTING")
+                val result = if (hudReply != null) null else container.actionExecutor.execute(command)
+                val reply = hudReply ?: when (result!!) {
                     is ExecutionResult.Success -> command.describe().removeSuffix(".").removeSuffix("?")
                     is ExecutionResult.Failure -> result.message
                 }
@@ -179,7 +190,11 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 _lastResponse.value = reply
                 _statusText.value = "SYSTEM READY"
                 log("ACTION: ${command::class.simpleName?.uppercase()}")
-                if (speakReply) speak(reply) else _voiceState.value = VoiceState.IDLE
+                if (hudReply == null) WallpaperEventBus.emit(JarvisHudState.COMPLETED, "CORE", "COMMAND COMPLETED")
+                if (speakReply) speak(reply) else {
+                    _voiceState.value = VoiceState.IDLE
+                    if (hudReply == null) WallpaperEventBus.emit(JarvisHudState.IDLE, "CORE", "SYSTEM READY")
+                }
                 return@launch
             }
 
@@ -199,6 +214,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
             _voiceState.value = VoiceState.THINKING
             _statusText.value = "PROCESSING..."
+            WallpaperEventBus.emit(JarvisHudState.THINKING, "CORE", "THINKING")
 
             var searchContext = ""
             if (needsWebSearch(text)) {
@@ -222,9 +238,17 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     _statusText.value = "SYSTEM READY"
 
                     val command = CommandEngine.parse(result.commandJson)
-                    if (command != null) log("COMMAND RECEIVED: ${command::class.simpleName?.uppercase()}")
+                    val plan = container.agentPlanner.parsePlan(result.commandJson)
+                    if (plan != null) log("PLAN RECEIVED: ${plan.actions.size} ACTIONS")
+                    else if (command != null) log("COMMAND RECEIVED: ${command::class.simpleName?.uppercase()}")
                     when {
-                        command is JarvisCommand.ReadScreen -> {
+                        plan != null -> handlePlan(plan.actions, text, speakReply)
+                        command is JarvisCommand.ReadScreen || command is JarvisCommand.ReadNotifications -> {
+                            WallpaperEventBus.emit(
+                                JarvisHudState.EXECUTING,
+                                if (command is JarvisCommand.ReadScreen) "SCREEN" else "NOTIFICATIONS",
+                                if (command is JarvisCommand.ReadScreen) "SCREEN ANALYSIS" else "NOTIFICATION ANALYSIS"
+                            )
                             // A read-only command: what it "says" is whatever it finds on screen,
                             // not the AI's filler reply, so speak/show that instead.
                             _statusText.value = "READING SCREEN..."
@@ -253,6 +277,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     _lastResponse.value = message
                     _voiceState.value = VoiceState.ERROR
                     _statusText.value = "SYSTEM ERROR"
+                    WallpaperEventBus.emit(JarvisHudState.ERROR, "CORE", "SYSTEM ERROR")
                 }
             )
         }
@@ -267,7 +292,73 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         return id
     }
 
+    private fun handlePlan(actions: List<JarvisCommand>, request: String, speakReply: Boolean) {
+        if (actions.isEmpty()) return
+        val requiresConfirmation = actions.any { it.requiresConfirmation() } || container.securePrefs.confirmEveryAction
+        val confirmation = actions.mapIndexed { index, action ->
+            "${index + 1}. ${action.describe().removeSuffix("?")}"
+        }.joinToString("\n")
+        if (requiresConfirmation) {
+            _pendingPlan.value = PendingPlan(actions, confirmation)
+            _statusText.value = "AWAITING CONFIRMATION"
+            WallpaperEventBus.emit(JarvisHudState.PERMISSION_REQUIRED, "CORE", "PERMISSION REQUIRED")
+            return
+        }
+        executePlan(actions, request, speakReply)
+    }
+
+    private fun executePlan(actions: List<JarvisCommand>, request: String, speakReply: Boolean) {
+        viewModelScope.launch {
+            _voiceState.value = VoiceState.THINKING
+            _statusText.value = "PLANNING ${actions.size} STEPS..."
+            WallpaperEventBus.emit(JarvisHudState.PLANNING, "CORE", "PLANNING ${actions.size} STEPS", 0f)
+            log("PLAN START: ${actions.size} STEPS")
+            val task = container.taskEngine.run(request, actions) { update ->
+                WallpaperEventBus.emit(
+                    when (update.status) {
+                        com.jarvis.assistant.agent.TaskStatus.EXECUTING -> JarvisHudState.EXECUTING
+                        com.jarvis.assistant.agent.TaskStatus.VERIFYING -> JarvisHudState.VERIFYING
+                        com.jarvis.assistant.agent.TaskStatus.COMPLETED -> JarvisHudState.COMPLETED
+                        com.jarvis.assistant.agent.TaskStatus.FAILED -> JarvisHudState.ERROR
+                        com.jarvis.assistant.agent.TaskStatus.CANCELLED -> JarvisHudState.ERROR
+                        else -> JarvisHudState.THINKING
+                    },
+                    "TASK",
+                    "STEP ${update.currentStep}/${actions.size}",
+                    if (actions.isEmpty()) 0f else update.currentStep.toFloat() / actions.size.toFloat()
+                )
+                _statusText.value = when (update.status) {
+                    com.jarvis.assistant.agent.TaskStatus.EXECUTING -> "EXECUTING ${update.currentStep}/${actions.size}"
+                    com.jarvis.assistant.agent.TaskStatus.VERIFYING -> "VERIFYING ${update.currentStep}/${actions.size}"
+                    com.jarvis.assistant.agent.TaskStatus.COMPLETED -> "TASK COMPLETE"
+                    com.jarvis.assistant.agent.TaskStatus.FAILED -> "TASK FAILED"
+                    com.jarvis.assistant.agent.TaskStatus.CANCELLED -> "TASK CANCELLED"
+                    else -> "PROCESSING"
+                }
+                log("STEP ${update.currentStep}/${actions.size}")
+            }
+            val reply = when (task.status) {
+                com.jarvis.assistant.agent.TaskStatus.COMPLETED -> "Task completed successfully."
+                com.jarvis.assistant.agent.TaskStatus.CANCELLED -> "Task cancelled."
+                else -> {
+                    val detail = task.failedSteps.lastOrNull()?.substringAfter(": ")
+                    "I couldn't complete the task${detail?.let { ": $it" } ?: "."}"
+                }
+            }
+            _lastResponse.value = reply
+            _statusText.value = if (task.status == com.jarvis.assistant.agent.TaskStatus.COMPLETED) "SYSTEM READY" else "SYSTEM ERROR"
+            log(if (task.status == com.jarvis.assistant.agent.TaskStatus.COMPLETED) "PLAN COMPLETE" else "PLAN FAILED")
+            if (speakReply) speak(reply) else _voiceState.value = VoiceState.IDLE
+        }
+    }
+
     private fun handleCommand(command: JarvisCommand) {
+        HudCommandExecutor.execute(getApplication(), command)?.let { reply ->
+            _lastResponse.value = reply
+            _statusText.value = "SYSTEM READY"
+            WallpaperEventBus.emit(JarvisHudState.COMPLETED, "CORE", "COMMAND COMPLETED")
+            return
+        }
         if (command is JarvisCommand.Remember) {
             viewModelScope.launch { container.memoryRepository.remember(command.content) }
             return
@@ -278,6 +369,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             val label = command.describe().removeSuffix("?").uppercase()
             _statusText.value = "EXECUTING: $label"
             log("ACTION: $label")
+            WallpaperEventBus.emit(JarvisHudState.EXECUTING, "COMMAND", label)
             val result = container.actionExecutor.execute(command)
             _statusText.value = when (result) {
                 is ExecutionResult.Success -> "TASK COMPLETE"
@@ -310,6 +402,17 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun confirmPendingPlan(confirmed: Boolean) {
+        val pending = _pendingPlan.value ?: return
+        _pendingPlan.value = null
+        if (confirmed) {
+            executePlan(pending.actions, "confirmed multi-step task", speakReply = true)
+        } else {
+            _statusText.value = "SYSTEM READY"
+            _voiceState.value = VoiceState.IDLE
+        }
+    }
+
     /** Replays a past message through TTS — used by the "speaker" button on chat bubbles. */
     fun speakAgain(text: String) {
         viewModelScope.launch { speak(text) }
@@ -318,6 +421,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     private suspend fun speak(text: String) {
         _voiceState.value = VoiceState.SPEAKING
         _statusText.value = "RESPONDING..."
+        WallpaperEventBus.emit(JarvisHudState.COMPLETED, "VOICE", "RESPONDING")
         val prefs = container.securePrefs
         container.textToSpeechManager.setRate(prefs.speechRate)
         // Default to a male-sounding voice the first time, then remember whatever the user picks.

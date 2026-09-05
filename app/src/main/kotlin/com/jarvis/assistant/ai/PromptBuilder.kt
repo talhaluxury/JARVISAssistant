@@ -80,6 +80,8 @@ object PromptBuilder {
             - {"type":"MEDIA_NEXT"} — skip to the next track.
             - {"type":"MEDIA_PREVIOUS"} — go to the previous track.
             - {"type":"READ_SCREEN"} — read the visible text on the current screen back to the user.
+            - {"type":"READ_NOTIFICATIONS"} — summarize active notifications only when Android Notification Access is explicitly enabled.
+            - {"type":"ENABLE_NOTIFICATION_ACCESS"} — open Android Notification Access settings when the user asks JARVIS to read notifications but access is not enabled.
               Use this to verify something happened, or to answer "what does this say" style
               questions, rather than guessing what might be on screen.
             - {"type":"SAVE_TEXT_FILE","filename":"<e.g. index.html>","content":"<full file text>"}
@@ -99,6 +101,15 @@ object PromptBuilder {
               WhatsApp, finds the contact, and types the message. This always requires the user's
               confirmation before it is actually sent — never claim it was sent until confirmed.
             - {"type":"STOP"} — stop/cancel whatever JARVIS is currently doing.
+            - {"type":"ACTIVATE_HUD"} — activate the full futuristic live wallpaper HUD.
+            - {"type":"STANDBY_HUD"} — put the HUD into low-power standby.
+            - {"type":"SHOW_SYSTEM_STATUS"} — show real battery/RAM/storage/network telemetry on the HUD.
+            - {"type":"SHOW_BATTERY"} — highlight real battery telemetry.
+            - {"type":"SHOW_NETWORK"} — highlight real network/Wi-Fi/Bluetooth telemetry.
+            - {"type":"SHOW_NOTIFICATIONS"} — highlight notification telemetry only if Notification Access is enabled.
+            - {"type":"FULL_HUD"} — switch the wallpaper to full HUD mode.
+            - {"type":"MINIMAL_HUD"} — switch the wallpaper to minimal HUD mode.
+            - {"type":"POWER_SAVING_HUD"} — switch the wallpaper to a low-power rendering mode.
 
             You can also act as a coding assistant: when asked to write or generate code (HTML,
             CSS, JavaScript, Python, Kotlin, JSON, etc.), reply with complete, working code in your

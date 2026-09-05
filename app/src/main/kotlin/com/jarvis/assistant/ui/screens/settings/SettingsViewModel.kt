@@ -11,9 +11,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.assistant.JarvisApplication
 import com.jarvis.assistant.accessibility.JarvisAccessibilityService
+import com.jarvis.assistant.notifications.JarvisNotificationListenerService
 import com.jarvis.assistant.overlay.OverlayService
 import com.jarvis.assistant.util.NetworkMonitor
 import com.jarvis.assistant.voice.JarvisVoice
+import com.jarvis.assistant.hud.HudSettings
+import com.jarvis.assistant.hud.HudSettingsRepository
+import com.jarvis.assistant.hud.HudMode
+import com.jarvis.assistant.hud.WallpaperEventBus
 import com.jarvis.assistant.wallpaper.LiveWallpaperService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,15 +38,19 @@ data class SettingsState(
     val voices: List<JarvisVoice> = emptyList(),
     val aiConfigured: Boolean = false,
     val phoneControlEnabled: Boolean = false,
+    val notificationAccessEnabled: Boolean = false,
     val networkOnline: Boolean = false,
     val confirmEveryAction: Boolean = false,
     val backgroundJarvisEnabled: Boolean = false,
     val screenAutomationEnabled: Boolean = true,
+    val hudSettings: HudSettings = HudSettings(),
+    val hudMode: HudMode = HudMode.AUTO,
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val container = (application as JarvisApplication).container
     private val prefs = container.securePrefs
+    private val hudPrefs = HudSettingsRepository(application)
 
     private val _state = MutableStateFlow(
         SettingsState(
@@ -55,7 +64,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             voiceName = prefs.voiceName,
             confirmEveryAction = prefs.confirmEveryAction,
             backgroundJarvisEnabled = prefs.backgroundJarvisEnabled,
-            screenAutomationEnabled = prefs.screenAutomationEnabled
+            screenAutomationEnabled = prefs.screenAutomationEnabled,
+            hudSettings = hudPrefs.read(),
+            hudMode = WallpaperEventBus.state.value.mode
         )
     )
     val state: StateFlow<SettingsState> = _state.asStateFlow()
@@ -138,6 +149,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _state.value = _state.value.copy(
             aiConfigured = prefs.aiApiKey.isNullOrBlank().not(),
             phoneControlEnabled = JarvisAccessibilityService.isEnabled,
+            notificationAccessEnabled = JarvisNotificationListenerService.isEnabled,
             networkOnline = NetworkMonitor.isOnline(getApplication()),
         )
     }
@@ -184,6 +196,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
      * Oppo/ColorOS, Vivo, OnePlus, Samsung) background/accessibility services get silently killed
      * a few minutes after screen-off unless the app is exempted here — a very common reason
      * automation "works once then stops" or "doesn't work unless the app is open". */
+    fun openNotificationAccessSettings() {
+        val app = getApplication<Application>()
+        runCatching {
+            app.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        }
+    }
+
     fun openBatteryOptimizationSettings() {
         val app = getApplication<Application>()
         val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
@@ -198,6 +219,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     })
                 }
             }
+    }
+
+    fun updateHudBrightness(v: Float) { hudPrefs.setBrightness(v); _state.value = _state.value.copy(hudSettings = hudPrefs.read()) }
+    fun updateHudIntensity(v: Float) { hudPrefs.setIntensity(v); _state.value = _state.value.copy(hudSettings = hudPrefs.read()) }
+    fun updateHudSpeed(v: Float) { hudPrefs.setSpeed(v); _state.value = _state.value.copy(hudSettings = hudPrefs.read()) }
+    fun updateHudVisible(key: String, value: Boolean) { hudPrefs.setVisible(key, value); _state.value = _state.value.copy(hudSettings = hudPrefs.read()) }
+    fun updateHudPowerSaving(value: Boolean) {
+        hudPrefs.setPowerSaving(value)
+        _state.value = _state.value.copy(hudSettings = hudPrefs.read())
+        WallpaperEventBus.setMode(if (value) HudMode.STANDBY else HudMode.AUTO)
+    }
+    fun setHudMode(mode: HudMode) {
+        WallpaperEventBus.setMode(mode)
+        _state.value = _state.value.copy(hudMode = mode)
     }
 
     fun clearMemory() {

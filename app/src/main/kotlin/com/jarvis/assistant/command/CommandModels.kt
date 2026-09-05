@@ -29,6 +29,8 @@ sealed class JarvisCommand {
 
     /** Reads the visible text on the current screen back, for verification or Q&A about it. */
     object ReadScreen : JarvisCommand()
+    object ReadNotifications : JarvisCommand()
+    object EnableNotificationAccess : JarvisCommand()
 
     /** Saves generated text/code as a real file in the Downloads folder. */
     data class SaveTextFile(val filename: String, val content: String) : JarvisCommand()
@@ -82,6 +84,17 @@ sealed class JarvisCommand {
 
     /** Stops whatever JARVIS is currently doing: speaking, or an in-progress automation. */
     object StopAction : JarvisCommand()
+
+    // HUD-only commands are local, fast and do not require AI/network access.
+    object ActivateHud : JarvisCommand()
+    object StandbyHud : JarvisCommand()
+    object ShowSystemStatus : JarvisCommand()
+    object ShowBattery : JarvisCommand()
+    object ShowNetwork : JarvisCommand()
+    object ShowNotificationsHud : JarvisCommand()
+    object FullHud : JarvisCommand()
+    object MinimalHud : JarvisCommand()
+    object PowerSavingHud : JarvisCommand()
 }
 
 /** Whether a command needs an explicit "yes, do it" from the user before executing. */
@@ -103,6 +116,8 @@ fun JarvisCommand.requiresConfirmation(): Boolean = when (this) {
     JarvisCommand.MediaNext,
     JarvisCommand.MediaPrevious,
     JarvisCommand.ReadScreen,
+    JarvisCommand.ReadNotifications,
+    JarvisCommand.EnableNotificationAccess,
     JarvisCommand.EnablePhoneControl,
     // Fast current-app navigation is never destructive/sensitive, so it never blocks on
     // confirmation — this is what keeps "scroll down" instant and off the JARVIS activity.
@@ -112,6 +127,15 @@ fun JarvisCommand.requiresConfirmation(): Boolean = when (this) {
     is JarvisCommand.SearchCurrentApp,
     JarvisCommand.TapFirstResult,
     JarvisCommand.StopAction,
+    JarvisCommand.ActivateHud,
+    JarvisCommand.StandbyHud,
+    JarvisCommand.ShowSystemStatus,
+    JarvisCommand.ShowBattery,
+    JarvisCommand.ShowNetwork,
+    JarvisCommand.ShowNotificationsHud,
+    JarvisCommand.FullHud,
+    JarvisCommand.MinimalHud,
+    JarvisCommand.PowerSavingHud,
     // SendPendingMessage is only ever fired internally, after the user already said "yes" to
     // a pending SendWhatsAppMessage — it is never something the AI/router issues directly.
     JarvisCommand.SendPendingMessage -> false
@@ -151,6 +175,8 @@ fun JarvisCommand.describe(): String = when (this) {
     JarvisCommand.MediaNext -> "Skip to next track."
     JarvisCommand.MediaPrevious -> "Go to previous track."
     JarvisCommand.ReadScreen -> "Read what's on screen."
+    JarvisCommand.ReadNotifications -> "Read recent notifications."
+    JarvisCommand.EnableNotificationAccess -> "Open Notification Access settings?"
     is JarvisCommand.SaveTextFile -> "Save \"$filename\" to Downloads?"
     JarvisCommand.ScrollDown -> "Scroll down."
     JarvisCommand.ScrollUp -> "Scroll up."
@@ -160,4 +186,13 @@ fun JarvisCommand.describe(): String = when (this) {
     is JarvisCommand.SendWhatsAppMessage -> "Send \"$message\" to $contact on WhatsApp?"
     JarvisCommand.SendPendingMessage -> "Sending."
     JarvisCommand.StopAction -> "Stopped."
+    JarvisCommand.ActivateHud -> "Holographic interface activated."
+    JarvisCommand.StandbyHud -> "HUD standby activated."
+    JarvisCommand.ShowSystemStatus -> "System status displayed."
+    JarvisCommand.ShowBattery -> "Battery status displayed."
+    JarvisCommand.ShowNetwork -> "Network status displayed."
+    JarvisCommand.ShowNotificationsHud -> "Notification HUD displayed."
+    JarvisCommand.FullHud -> "Full HUD activated."
+    JarvisCommand.MinimalHud -> "Minimal HUD activated."
+    JarvisCommand.PowerSavingHud -> "Power-saving HUD activated."
 }

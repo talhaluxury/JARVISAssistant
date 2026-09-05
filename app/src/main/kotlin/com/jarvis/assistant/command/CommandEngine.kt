@@ -79,6 +79,8 @@ object CommandEngine {
                 "MEDIA_NEXT" -> JarvisCommand.MediaNext
                 "MEDIA_PREVIOUS" -> JarvisCommand.MediaPrevious
                 "READ_SCREEN" -> JarvisCommand.ReadScreen
+                "READ_NOTIFICATIONS" -> JarvisCommand.ReadNotifications
+                "ENABLE_NOTIFICATION_ACCESS" -> JarvisCommand.EnableNotificationAccess
 
                 "SAVE_TEXT_FILE" -> {
                     val filename = json.optString("filename").takeIf { it.isNotBlank() } ?: return null
@@ -105,6 +107,15 @@ object CommandEngine {
                 }
 
                 "STOP" -> JarvisCommand.StopAction
+                "ACTIVATE_HUD", "HUD_ACTIVATE" -> JarvisCommand.ActivateHud
+                "STANDBY_HUD", "HUD_STANDBY" -> JarvisCommand.StandbyHud
+                "SHOW_SYSTEM_STATUS", "SYSTEM_STATUS" -> JarvisCommand.ShowSystemStatus
+                "SHOW_BATTERY" -> JarvisCommand.ShowBattery
+                "SHOW_NETWORK" -> JarvisCommand.ShowNetwork
+                "SHOW_NOTIFICATIONS" -> JarvisCommand.ShowNotificationsHud
+                "FULL_HUD" -> JarvisCommand.FullHud
+                "MINIMAL_HUD" -> JarvisCommand.MinimalHud
+                "POWER_SAVING_HUD" -> JarvisCommand.PowerSavingHud
 
                 else -> null
             }

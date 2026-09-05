@@ -7,6 +7,8 @@ import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import java.util.ArrayDeque
+import com.jarvis.assistant.hud.JarvisHudState
+import com.jarvis.assistant.hud.WallpaperEventBus
 
 /**
  * Lets JARVIS operate other apps on the user's behalf: tapping visible buttons,
@@ -31,16 +33,24 @@ class JarvisAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        WallpaperEventBus.emit(JarvisHudState.IDLE, "SCREEN", "SCREEN ANALYSIS ACTIVE")
     }
 
     override fun onDestroy() {
         super.onDestroy()
         if (instance === this) instance = null
+        WallpaperEventBus.emit(JarvisHudState.IDLE, "SCREEN", "SCREEN ANALYSIS OFF")
         handler.removeCallbacksAndMessages(null)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (queue.isNotEmpty()) tryRunNextStep()
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val pkg = event.packageName?.toString().orEmpty()
+            if (pkg.isNotBlank() && pkg != applicationContext.packageName) {
+                WallpaperEventBus.emit(JarvisHudState.IDLE, "APP", "APP ${pkg.substringAfterLast('.').uppercase()}")
+            }
+        }
     }
 
     override fun onInterrupt() { /* no-op */ }

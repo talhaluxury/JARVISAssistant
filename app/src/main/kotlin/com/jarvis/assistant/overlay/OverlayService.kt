@@ -357,7 +357,7 @@ class OverlayService : Service() {
                             speakWithBargeIn(reply)
                         }
                     }
-                    command is JarvisCommand.ReadScreen -> {
+                    command is JarvisCommand.ReadScreen || command is JarvisCommand.ReadNotifications -> {
                         val screenResult = container.actionExecutor.execute(command)
                         val screenText = when (screenResult) {
                             is ExecutionResult.Success -> screenResult.message

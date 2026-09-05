@@ -40,6 +40,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.assistant.ui.theme.JarvisCyan
 import com.jarvis.assistant.ui.theme.JarvisError
 import com.jarvis.assistant.ui.theme.JarvisTextSecondary
+import com.jarvis.assistant.hud.HudMode
 
 private val languages = listOf("auto" to "Auto-detect", "en" to "English", "ur" to "Urdu", "ur-roman" to "Roman Urdu")
 
@@ -73,6 +74,19 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         SectionLabel("System Status")
         StatusRow("AI Connection", state.aiConfigured)
         StatusRow("Phone Control (Accessibility)", state.phoneControlEnabled)
+        StatusRow("Notification Access", state.notificationAccessEnabled)
+        if (!state.notificationAccessEnabled) {
+            Text(
+                "Optional: allows JARVIS to summarize active notifications. Android keeps this behind a separate system-level access switch.",
+                color = JarvisTextSecondary,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            )
+            OutlinedButton(
+                onClick = { viewModel.openNotificationAccessSettings() },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+            ) { Text("Enable Notification Access") }
+        }
         if (!state.phoneControlEnabled) {
             Text(
                 "OFF means JARVIS cannot tap, type, or read the screen inside any other app " +
@@ -274,6 +288,53 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             Text("Set as live wallpaper")
         }
 
+        SectionLabel("JARVIS HUD CONTROL")
+        Text(
+            "The live wallpaper is a real WallpaperService. These controls change its renderer without touching the microphone or bypassing Android security.",
+            color = JarvisTextSecondary,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(HudMode.AUTO, HudMode.FULL, HudMode.MINIMAL, HudMode.STANDBY).forEach { mode ->
+                OutlinedButton(onClick = { viewModel.setHudMode(mode) }) {
+                    Text(mode.name)
+                }
+            }
+        }
+        Text("Brightness", modifier = Modifier.padding(horizontal = 16.dp))
+        Slider(
+            value = state.hudSettings.brightness,
+            onValueChange = viewModel::updateHudBrightness,
+            valueRange = .1f..1f,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+        )
+        Text("Animation intensity", modifier = Modifier.padding(horizontal = 16.dp))
+        Slider(
+            value = state.hudSettings.animationIntensity,
+            onValueChange = viewModel::updateHudIntensity,
+            valueRange = .25f..1.5f,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+        )
+        Text("Animation speed", modifier = Modifier.padding(horizontal = 16.dp))
+        Slider(
+            value = state.hudSettings.animationSpeed,
+            onValueChange = viewModel::updateHudSpeed,
+            valueRange = .25f..2f,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+        )
+        HudSwitch("Show clock", state.hudSettings.showClock) { viewModel.updateHudVisible("clock", it) }
+        HudSwitch("Show battery", state.hudSettings.showBattery) { viewModel.updateHudVisible("battery", it) }
+        HudSwitch("Show RAM", state.hudSettings.showRam) { viewModel.updateHudVisible("ram", it) }
+        HudSwitch("Show storage", state.hudSettings.showStorage) { viewModel.updateHudVisible("storage", it) }
+        HudSwitch("Show network", state.hudSettings.showNetwork) { viewModel.updateHudVisible("network", it) }
+        HudSwitch("Show notifications", state.hudSettings.showNotifications) { viewModel.updateHudVisible("notifications", it) }
+        HudSwitch("Show device info", state.hudSettings.showDevice) { viewModel.updateHudVisible("device", it) }
+        HudSwitch("Power-saving renderer", state.hudSettings.powerSaving) { viewModel.updateHudPowerSaving(it) }
+
         SectionLabel("Privacy & Data")
         Text(
             (if (state.wakeWordEnabled)
@@ -328,6 +389,17 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             confirmButton = { TextButton(onClick = { viewModel.clearHistory(); clearHistoryDialog = false }) { Text("Clear") } },
             dismissButton = { TextButton(onClick = { clearHistoryDialog = false }) { Text("Cancel") } }
         )
+    }
+}
+
+@Composable
+private fun HudSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
