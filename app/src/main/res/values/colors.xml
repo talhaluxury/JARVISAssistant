@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors ui/theme/Color.kt so XML resources (icons, splash) match the in-app palette. -->
+    <color name="jarvis_background">#FF0A0E14</color>
+    <color name="jarvis_cyan">#FF38BDF8</color>
+    <color name="jarvis_text_secondary">#FF8A97AB</color>
+</resources>

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "android_accessibility_purpose",
+    "topic": "What the Accessibility Service permission is for",
+    "content": "JARVIS's phone-control features (scrolling, going back, opening recent apps, tapping/typing inside other apps, sending a WhatsApp message) all run through Android's Accessibility Service API. This is the only public, non-root way for an app to read another app's visible screen content and simulate taps/typing. Android requires the user to enable it manually in Settings > Accessibility because it is powerful — it is never turned on silently by JARVIS.",
+    "keywords": ["accessibility", "accessibility service", "permission", "phone control", "screen automation", "enable jarvis"]
+  },
+  {
+    "id": "android_notification_access_purpose",
+    "topic": "What Notification Access is for",
+    "content": "Notification Access is a separate Android permission from Accessibility. It only lets JARVIS read the content of active notifications so it can summarize them when asked. It does not grant any ability to tap, type, or control other apps — that is Accessibility's job. Both must be enabled separately in Android Settings.",
+    "keywords": ["notification access", "notifications", "read notifications", "permission"]
+  },
+  {
+    "id": "android_query_all_packages",
+    "topic": "Why JARVIS sometimes can't find an installed app",
+    "content": "Modern Android restricts which other apps' package names an app can see (the QUERY_ALL_PACKAGES policy). JARVIS deliberately avoids requesting that broad permission and instead lists only apps that appear in the system launcher (apps with a home-screen icon). An installed app with no launcher icon, or a very new install the launcher hasn't indexed yet, may not be found by name.",
+    "keywords": ["app not found", "isn't installed", "can't find app", "query all packages", "launcher"]
+  },
+  {
+    "id": "android_battery_optimization",
+    "topic": "How battery optimization affects background JARVIS",
+    "content": "Android's Doze mode and per-app battery optimization can pause background services, including JARVIS's wake-word listener, after the screen has been off for a while. For the always-listening background mode to stay reliable, the user needs to exempt JARVIS from battery optimization in Android Settings > Apps > JARVIS > Battery.",
+    "keywords": ["background jarvis", "wake word not working", "battery optimization", "doze", "stopped listening"]
+  },
+  {
+    "id": "android_runtime_permissions",
+    "topic": "How Android runtime permissions work",
+    "content": "Sensitive permissions (microphone, notifications on Android 13+, Bluetooth on Android 12+) must be granted by the user at runtime, not just declared in the manifest. If a permission is denied, the related feature reports itself as unavailable rather than JARVIS silently failing or pretending the feature ran.",
+    "keywords": ["permission denied", "runtime permission", "microphone permission", "android permission"]
+  }
+]

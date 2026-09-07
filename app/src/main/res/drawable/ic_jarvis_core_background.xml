@@ -1,0 +1,36 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M0,0 h108 v108 h-108 z"
+        android:fillColor="#FF0A0E14" />
+
+    <!-- Faint corner brackets, echoing the in-app HUD grid corners -->
+    <path
+        android:pathData="M14,14 h14 M14,14 v14"
+        android:strokeColor="#FF38BDF8"
+        android:strokeWidth="2"
+        android:strokeAlpha="0.35"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M94,14 h-14 M94,14 v14"
+        android:strokeColor="#FF38BDF8"
+        android:strokeWidth="2"
+        android:strokeAlpha="0.35"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M14,94 h14 M14,94 v-14"
+        android:strokeColor="#FF38BDF8"
+        android:strokeWidth="2"
+        android:strokeAlpha="0.35"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M94,94 h-14 M94,94 v-14"
+        android:strokeColor="#FF38BDF8"
+        android:strokeWidth="2"
+        android:strokeAlpha="0.35"
+        android:fillColor="#00000000" />
+</vector>

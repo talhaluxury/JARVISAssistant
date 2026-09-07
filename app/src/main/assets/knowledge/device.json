@@ -1,0 +1,26 @@
+[
+  {
+    "id": "device_battery_source",
+    "topic": "Where battery status comes from",
+    "content": "Battery percentage and charging state are read live from Android's BatteryManager and the ACTION_BATTERY_CHANGED broadcast. JARVIS never estimates or caches this — every battery report reflects the exact moment it was asked.",
+    "keywords": ["battery", "battery percent", "charging", "batterymanager"]
+  },
+  {
+    "id": "device_network_source",
+    "topic": "Where network/Wi-Fi/Bluetooth status comes from",
+    "content": "Network connectivity is read from ConnectivityManager's active network capabilities. Wi-Fi state comes from the same capabilities check (transport type). Bluetooth state requires the BLUETOOTH_CONNECT permission on Android 12+; without it, Bluetooth status is reported as unavailable rather than guessed.",
+    "keywords": ["network status", "wifi status", "bluetooth status", "connectivity manager", "offline"]
+  },
+  {
+    "id": "device_ram_storage_source",
+    "topic": "Where RAM and storage telemetry comes from",
+    "content": "RAM usage is read from ActivityManager.MemoryInfo and storage usage from StatFs on the primary external storage volume. These are shown on the HUD's system status view and are real device figures, not simulated values.",
+    "keywords": ["ram", "storage", "memory usage", "system status"]
+  },
+  {
+    "id": "device_screen_context_source",
+    "topic": "Where JARVIS's current-screen awareness comes from",
+    "content": "JARVIS only knows what app is in the foreground and what's on screen when the Accessibility Service is enabled — it reads the accessibility node tree of the active window. Without that permission, JARVIS has no visibility into other apps' screens at all.",
+    "keywords": ["current app", "screen context", "foreground app", "what's on screen"]
+  }
+]
