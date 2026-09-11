@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: jarvis-remote-relay
+    env: docker
+    dockerfilePath: ./relay-server/Dockerfile
+    plan: free

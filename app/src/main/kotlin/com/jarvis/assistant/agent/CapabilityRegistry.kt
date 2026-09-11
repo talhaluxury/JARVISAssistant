@@ -31,7 +31,7 @@ enum class Tool {
     DIAGNOSTIC, LEARNING
 }
 
-enum class ToolAvailability { AVAILABLE, UNAVAILABLE, REQUIRES_PERMISSION }
+enum class ToolAvailability { AVAILABLE, UNAVAILABLE, REQUIRES_PERMISSION, PERMISSION_REQUIRED, TEMPORARILY_UNAVAILABLE, NOT_SUPPORTED }
 
 data class CapabilityStatusEntry(
     val tool: Tool,

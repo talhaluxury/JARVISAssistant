@@ -141,7 +141,7 @@ class DiagnosticEngine(
 
     private fun ToolAvailability.toHealth(): HealthState = when (this) {
         ToolAvailability.AVAILABLE -> HealthState.OK
-        ToolAvailability.REQUIRES_PERMISSION -> HealthState.DEGRADED
-        ToolAvailability.UNAVAILABLE -> HealthState.DOWN
+        ToolAvailability.REQUIRES_PERMISSION, ToolAvailability.PERMISSION_REQUIRED -> HealthState.DEGRADED
+        ToolAvailability.UNAVAILABLE, ToolAvailability.TEMPORARILY_UNAVAILABLE, ToolAvailability.NOT_SUPPORTED -> HealthState.DOWN
     }
 }

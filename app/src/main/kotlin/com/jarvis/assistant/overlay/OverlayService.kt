@@ -169,6 +169,7 @@ class OverlayService : Service() {
 
                 var heard: String? = null
                 var sawError = false
+                setState(VoiceState.LISTENING)
                 runCatching {
                     container.speechToTextManager.listen(languageTag = null).collect { event ->
                         when (event) {
@@ -229,7 +230,10 @@ class OverlayService : Service() {
                         setState(VoiceState.IDLE)
                     }
                 }
-                delay(250)
+                // SpeechRecognizer is a one-shot API. A short re-arm delay is intentional,
+                // but keep it long enough to avoid a visible microphone open/close loop while
+                // Android tears down the previous recognizer session.
+                delay(600)
             }
         }
     }

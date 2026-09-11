@@ -26,6 +26,28 @@ import com.jarvis.assistant.search.WebSearchService
 import com.jarvis.assistant.voice.SpeechToTextManager
 import com.jarvis.assistant.voice.TextToSpeechManager
 import com.jarvis.assistant.voice.VoiceActivityDetector
+import com.jarvis.assistant.core.config.FeatureFlags
+import com.jarvis.assistant.core.event.JarvisEventBus
+import com.jarvis.assistant.core.state.JarvisStateStore
+import com.jarvis.assistant.core.state.StateSnapshotStore
+import com.jarvis.assistant.core.state.SystemSnapshotProvider
+import com.jarvis.assistant.core.skill.SkillRegistry
+import com.jarvis.assistant.core.skill.BuiltInSkills
+import com.jarvis.assistant.core.resource.ResourceManager
+import com.jarvis.assistant.core.resource.ResourceLockManager
+import com.jarvis.assistant.core.time.TimeAwareness
+import com.jarvis.assistant.core.cache.SmartCommandCache
+import com.jarvis.assistant.core.workflow.WorkflowStore
+import com.jarvis.assistant.core.verification.VerificationEngine
+import com.jarvis.assistant.core.observability.PerformanceTelemetry
+import com.jarvis.assistant.core.recovery.CrashRecoveryStore
+import com.jarvis.assistant.core.security.RiskEngine
+import com.jarvis.assistant.core.security.ContextSanitizer
+import com.jarvis.assistant.core.simulation.SimulationEngine
+import com.jarvis.assistant.core.mission.MissionManager
+import com.jarvis.assistant.core.workflow.WorkflowValidator
+import com.jarvis.assistant.core.observability.AuditLog
+import com.jarvis.assistant.core.recovery.RecoveryPolicy
 
 /**
  * Simple hand-written dependency container. Keeping this manual (instead of
@@ -33,6 +55,28 @@ import com.jarvis.assistant.voice.VoiceActivityDetector
  * easier to build reliably from GitHub Actions without Android Studio.
  */
 class AppContainer(context: Context) {
+
+    // Central runtime primitives: event-driven state, risk, simulation, missions and audit.
+    val eventBus = JarvisEventBus()
+    val stateStore = JarvisStateStore(eventBus)
+    val stateSnapshots = StateSnapshotStore()
+    val systemSnapshotProvider by lazy { SystemSnapshotProvider(context, capabilityRegistry) }
+    val skillRegistry = SkillRegistry()
+    val riskEngine = RiskEngine()
+    val simulationEngine = SimulationEngine()
+    val missionManager = MissionManager()
+    val workflowValidator = WorkflowValidator()
+    val auditLog = AuditLog()
+    val recoveryPolicy = RecoveryPolicy()
+    val resourceManager = ResourceManager(context)
+    val resourceLocks = ResourceLockManager()
+    val timeAwareness = TimeAwareness()
+    val commandCache = SmartCommandCache<String, String>()
+    val workflowStore = WorkflowStore(context)
+    val verificationEngine = VerificationEngine()
+    val performanceTelemetry = PerformanceTelemetry()
+    val crashRecoveryStore = CrashRecoveryStore(context)
+    val featureFlags = FeatureFlags()
 
     val securePrefs = SecurePrefs(context)
 
@@ -61,11 +105,12 @@ class AppContainer(context: Context) {
     val permissionManager = PermissionManager(context)
     val confirmationManager = ConfirmationManager(securePrefs)
     val agentPlanner = AgentPlanner()
-    val taskEngine = TaskEngine(actionExecutor, phoneContextEngine)
+    val taskEngine = TaskEngine(actionExecutor, phoneContextEngine, resourceLocks)
 
     // #35-58 AI Brain layer: capability truth, structured intent/context, memory relevance,
     // self-diagnostics, and controlled learning — see individual class docs for the spec section.
     val capabilityRegistry = CapabilityRegistry(context, securePrefs)
+    init { BuiltInSkills.registerInto(skillRegistry) { capabilityRegistry.snapshot() } }
     val contextManager = ContextManager(phoneContextEngine, capabilityRegistry, memoryRepository)
     val learningEngine = LearningEngine(brainRepository)
 

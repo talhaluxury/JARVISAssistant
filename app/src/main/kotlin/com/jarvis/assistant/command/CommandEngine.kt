@@ -146,6 +146,12 @@ object CommandEngine {
                     ?.let { AutomationStep.TapDescription(it) }
                 "type" -> stepJson.optString("value").takeIf { it.isNotBlank() }
                     ?.let { AutomationStep.TypeText(it) }
+                "long_press_text" -> stepJson.optString("value").takeIf { it.isNotBlank() }
+                    ?.let { AutomationStep.LongPressText(it) }
+                "long_press_desc" -> stepJson.optString("value").takeIf { it.isNotBlank() }
+                    ?.let { AutomationStep.LongPressDescription(it) }
+                "submit" -> AutomationStep.SubmitField
+                "tap_first_result" -> AutomationStep.TapFirstResult
                 "wait" -> AutomationStep.Wait(stepJson.optLong("value", 800L).coerceIn(100L, 5000L))
                 "back" -> AutomationStep.PressBack
                 "home" -> AutomationStep.PressHome

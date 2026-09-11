@@ -19,6 +19,8 @@ android {
         // API key/base URL are supplied at runtime in Settings (stored encrypted on-device),
         // NOT baked into the APK. These manifest placeholders only carry non-secret defaults.
         buildConfigField("String", "DEFAULT_AI_BASE_URL", "\"https://api.openai.com/\"")
+        val remoteRelayUrl = (project.findProperty("REMOTE_RELAY_URL") as String?)?.trim()?.trimEnd('/') ?: ""
+        buildConfigField("String", "DEFAULT_REMOTE_RELAY_URL", "\"${remoteRelayUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
     }
 
     buildTypes {

@@ -116,28 +116,65 @@ class AndroidActionExecutor(private val context: Context, private val securePref
 
     private fun openApp(name: String): ExecutionResult {
         val pm = context.packageManager
-        val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val matches = pm.queryIntentActivities(query, 0)
-        val spoken = name.trim()
-        val match = matches.firstOrNull { it.loadLabel(pm).toString().equals(spoken, true) }
-            ?: matches.firstOrNull { it.loadLabel(pm).toString().contains(spoken, true) }
-            // Speech-to-text often mis-hears trailing/leading words (e.g. "youtube corona sir"
-            // instead of "youtube"). If what was heard CONTAINS a real app's name, use that —
-            // pick the longest matching label so short accidental substrings don't win.
-            ?: matches
-                .filter { spoken.contains(it.loadLabel(pm).toString(), true) }
-                .maxByOrNull { it.loadLabel(pm).toString().length }
-            // Last resort: any shared word (3+ letters) between what was heard and the app name.
-            ?: matches
-                .filter { activity ->
-                    val label = activity.loadLabel(pm).toString().lowercase()
-                    spoken.lowercase().split(" ").any { word -> word.length > 2 && label.contains(word) }
-                }
-                .maxByOrNull { it.loadLabel(pm).toString().length }
-            ?: return ExecutionResult.Failure("\"$name\" isn't installed on this phone.")
-        val launchIntent = pm.getLaunchIntentForPackage(match.activityInfo.packageName)
-            ?: Intent(query).setPackage(match.activityInfo.packageName)
-        return launch(launchIntent)
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val matches = pm.queryIntentActivities(launcherIntent, 0)
+        val spoken = normalizeAppQuery(name)
+        if (spoken.isBlank()) return ExecutionResult.Failure("Please tell me which app to open.")
+
+        // Resolve against the actual launcher activities. Do not rely on
+        // getLaunchIntentForPackage(), which can return null for otherwise launchable apps
+        // on some Android/OEM configurations.
+        val scoredMatch = matches
+            .map { resolve -> resolve to normalizeAppQuery(resolve.loadLabel(pm).toString()) }
+            .filter { (_, label) -> label.isNotBlank() }
+            .map { (resolve, label) -> Triple(resolve, label, appMatchScore(spoken, label, resolve.activityInfo.packageName)) }
+            .maxByOrNull { it.third }
+
+        // Never launch an arbitrary app when speech recognition is unclear.
+        if (scoredMatch == null || scoredMatch.third < 500) {
+            return ExecutionResult.Failure("I couldn't find an installed app matching \"$name\". Say the app name exactly, or install it first.")
+        }
+
+        val resolve = scoredMatch.first
+        val launchIntent = Intent(launcherIntent).apply {
+            component = android.content.ComponentName(resolve.activityInfo.packageName, resolve.activityInfo.name)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        }
+        return try {
+            context.startActivity(launchIntent)
+            ExecutionResult.Success("Opened ${resolve.loadLabel(pm)}.")
+        } catch (e: ActivityNotFoundException) {
+            ExecutionResult.Failure("${resolve.loadLabel(pm)} is installed, but Android could not launch it from its launcher activity.")
+        } catch (e: SecurityException) {
+            ExecutionResult.Failure("Android blocked launching ${resolve.loadLabel(pm)}. Please check the app/phone restrictions and try again.")
+        }
+    }
+
+    private fun normalizeAppQuery(value: String): String = value
+        .lowercase()
+        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .removeSuffix(" app")
+        .removeSuffix(" application")
+        .trim()
+
+    private fun appMatchScore(spoken: String, label: String, packageName: String): Int {
+        if (label == spoken) return 1000
+        if (label.replace(" ", "") == spoken.replace(" ", "")) return 950
+        if (label.contains(spoken) || spoken.contains(label)) return 850 + label.length.coerceAtMost(100)
+        val spokenWords = spoken.split(' ').filter { it.length >= 2 }.toSet()
+        val labelWords = label.split(' ').filter { it.length >= 2 }.toSet()
+        val overlap = spokenWords.intersect(labelWords).size
+        if (overlap > 0) return 700 + overlap * 20 + label.length.coerceAtMost(50)
+
+        // Useful for common speech-recognition variants such as "you tube" vs "youtube".
+        val compactSpoken = spoken.replace(" ", "")
+        val compactLabel = label.replace(" ", "")
+        if (compactSpoken == compactLabel || compactSpoken.contains(compactLabel) || compactLabel.contains(compactSpoken)) {
+            return 650 + compactLabel.length.coerceAtMost(100)
+        }
+        return if (packageName.lowercase().contains(compactSpoken.replace(" ", ""))) 500 else -1
     }
 
     private fun openSettings(target: String): ExecutionResult {

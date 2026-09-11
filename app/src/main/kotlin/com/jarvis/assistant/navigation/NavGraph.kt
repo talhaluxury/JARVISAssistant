@@ -25,6 +25,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -40,6 +41,8 @@ import com.jarvis.assistant.ui.screens.home.HomeScreen
 import com.jarvis.assistant.ui.screens.memory.MemoryScreen
 import com.jarvis.assistant.ui.screens.permissions.PermissionsScreen
 import com.jarvis.assistant.ui.screens.settings.SettingsScreen
+import com.jarvis.assistant.remote.RemoteControlActivity
+import android.content.Intent
 
 private data class Destination(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
@@ -103,12 +106,17 @@ fun JarvisNavGraph() {
                     onOpenDashboard = { navController.navigate("dashboard") },
                     onOpenPermissions = { navController.navigate("permissions") },
                     onOpenMemory = { navController.navigate("memory") },
-                    onOpenSettings = { navController.navigate("settings") }
+                    onOpenSettings = { navController.navigate("settings") },
+                    onOpenRemote = { navController.navigate("remote") }
                 )
             }
             composable("chat") { ChatScreen(assistantViewModel) }
             composable("memory") { MemoryScreen() }
             composable("history") { HistoryScreen(assistantViewModel, onOpenChat = { navController.navigate("chat") }) }
+            composable("remote") {
+                val context = LocalContext.current
+                androidx.compose.runtime.LaunchedEffect(Unit) { context.startActivity(Intent(context, RemoteControlActivity::class.java)); navController.popBackStack() }
+            }
             composable("settings") {
                 SettingsScreen(
                     onOpenDashboard = { navController.navigate("dashboard") },

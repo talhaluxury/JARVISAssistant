@@ -15,6 +15,8 @@ import com.jarvis.assistant.command.JarvisCommand
 import com.jarvis.assistant.command.LocalIntentRouter
 import com.jarvis.assistant.command.describe
 import com.jarvis.assistant.command.requiresConfirmation
+import com.jarvis.assistant.core.input.InputNormalizer
+import com.jarvis.assistant.core.input.LanguageDetector
 import com.jarvis.assistant.data.local.db.entity.ConversationEntity
 import com.jarvis.assistant.data.local.db.entity.MessageEntity
 import com.jarvis.assistant.search.needsWebSearch
@@ -184,7 +186,18 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun sendMessage(text: String, speakReply: Boolean) {
-        if (text.isBlank()) return
+        val normalizedText = InputNormalizer.normalize(text)
+        if (normalizedText.isBlank()) return
+        if (normalizedText != text) { sendMessage(normalizedText, speakReply); return }
+        // Language is detected locally so offline routing and diagnostics can distinguish
+        // English, Roman Urdu, Urdu and mixed requests without sending extra telemetry.
+        val inputLanguage = LanguageDetector.detect(normalizedText)
+        if (container.securePrefs.safeModeEnabled && !isSafetyCommand(text)) {
+            _lastResponse.value = "Safe mode is enabled. I will not execute actions until you disable Safe Mode."
+            _statusText.value = "SAFE MODE"
+            return
+        }
+        container.eventBus.emit(com.jarvis.assistant.core.event.JarvisEvent.CommandReceived(text))
         _pendingClarification.value = null
         viewModelScope.launch {
             // Routing-critical commands (scroll, back, home, search-here, open app, stop, and
@@ -218,6 +231,9 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 if (command == JarvisCommand.StopAction) {
+                    container.taskEngine.cancel()
+                    container.missionManager.emergencyStop()
+                    container.stateStore.emergencyStop()
                     container.textToSpeechManager.stop()
                     container.voiceActivityDetector.stop()
                     container.speechToTextManager.cancel()
@@ -295,6 +311,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
             lastUserRequestText = text
             _voiceState.value = VoiceState.THINKING
+            container.stateStore.transition(com.jarvis.assistant.core.state.JarvisMode.THINKING)
             _statusText.value = "PROCESSING..."
             WallpaperEventBus.emit(JarvisHudState.THINKING, "CORE", "THINKING")
 
@@ -424,11 +441,26 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             hasActiveTask = true
             container.contextManager.setCurrentTask(request)
+            val mission = container.missionManager.create(request)
+            container.eventBus.emit(com.jarvis.assistant.core.event.JarvisEvent.PlanCreated(mission.id, actions.size))
+            if (container.securePrefs.developerSimulationEnabled) {
+                val preview = container.simulationEngine.preview(actions)
+                val reply = "Simulation only. Planned ${preview.size} action(s): " + preview.joinToString("; ") { it.action }
+                _lastResponse.value = reply
+                _statusText.value = "SIMULATION COMPLETE"
+                container.auditLog.record("SIMULATION", reply)
+                hasActiveTask = false
+                container.contextManager.setCurrentTask(null)
+                if (speakReply) speak(reply) else _voiceState.value = VoiceState.IDLE
+                return@launch
+            }
             _voiceState.value = VoiceState.THINKING
             _statusText.value = "PLANNING ${actions.size} STEPS..."
             WallpaperEventBus.emit(JarvisHudState.PLANNING, "CORE", "PLANNING ${actions.size} STEPS", 0f)
             log("PLAN START: ${actions.size} STEPS")
             val task = container.taskEngine.run(request, actions) { update ->
+                container.stateStore.update { it.copy(taskId = update.id, taskStatus = update.status, simulation = container.securePrefs.developerSimulationEnabled, risk = actions.maxOfOrNull { a -> container.riskEngine.assess(a).ordinal }?.let { ordinal -> com.jarvis.assistant.core.state.RiskLevel.values()[ordinal] } ?: com.jarvis.assistant.core.state.RiskLevel.LOW) }
+                container.auditLog.record("TASK", "${update.status} step=${update.currentStep}", update.status != com.jarvis.assistant.agent.TaskStatus.FAILED)
                 WallpaperEventBus.emit(
                     when (update.status) {
                         com.jarvis.assistant.agent.TaskStatus.EXECUTING -> JarvisHudState.EXECUTING
@@ -516,7 +548,9 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 _statusText.value = "EXECUTING: $label"
                 log("ACTION: $label")
                 WallpaperEventBus.emit(JarvisHudState.EXECUTING, "COMMAND", label)
+                val startedAt = System.currentTimeMillis()
                 val result = container.actionExecutor.execute(command)
+                container.performanceTelemetry.commandFinished(System.currentTimeMillis() - startedAt, result is ExecutionResult.Success)
                 _statusText.value = when (result) {
                     is ExecutionResult.Success -> "TASK COMPLETE"
                     is ExecutionResult.Failure -> result.message
@@ -558,7 +592,9 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     logHistory(pending.command, success = true, message = brainReply)
                     return@launch
                 }
+                val startedAt = System.currentTimeMillis()
                 val result = container.actionExecutor.execute(pending.command)
+                container.performanceTelemetry.commandFinished(System.currentTimeMillis() - startedAt, result is ExecutionResult.Success)
                 // A confirmed WhatsApp message is typed and waiting — actually send it now that
                 // the user has said yes. The AI never gets a direct path to the Send button itself.
                 if (result is ExecutionResult.Success && pending.command is JarvisCommand.SendWhatsAppMessage) {
@@ -627,6 +663,32 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             _voiceState.value = VoiceState.IDLE
             _statusText.value = "SYSTEM READY"
         }
+    }
+
+    fun setDeveloperSimulation(enabled: Boolean) {
+        container.securePrefs.developerSimulationEnabled = enabled
+        container.stateStore.update { it.copy(simulation = enabled) }
+    }
+
+    fun setSafeMode(enabled: Boolean) {
+        container.securePrefs.safeModeEnabled = enabled
+        if (enabled) container.stateStore.update { it.copy(mode = com.jarvis.assistant.core.state.JarvisMode.SAFE_MODE, emergencyStop = true) }
+        else { container.missionManager.clearEmergencyStop(); container.stateStore.clearEmergencyStop() }
+    }
+
+    fun emergencyStop() {
+        container.taskEngine.cancel()
+        container.missionManager.emergencyStop()
+        container.securePrefs.safeModeEnabled = true
+        container.stateStore.emergencyStop()
+        container.textToSpeechManager.stop()
+        container.speechToTextManager.cancel()
+        _statusText.value = "EMERGENCY STOP"
+    }
+
+    private fun isSafetyCommand(text: String): Boolean {
+        val t = text.lowercase()
+        return listOf("safe mode", "stop", "cancel", "emergency stop", "diagnostic").any { t.contains(it) }
     }
 
     override fun onCleared() {

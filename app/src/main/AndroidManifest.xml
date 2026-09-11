@@ -6,6 +6,8 @@
     <!-- Network calls to the AI provider / search API -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- Alarms/reminders -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
@@ -29,6 +31,8 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
+
+        <activity android:name=".remote.RemoteControlActivity" android:exported="false" />
 
         <activity
             android:name=".MainActivity"
@@ -59,6 +63,11 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <service
+            android:name=".remote.RemoteScreenService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
 
         <service
             android:name=".overlay.OverlayService"

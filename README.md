@@ -217,3 +217,19 @@ security restrictions.
 - Multi-step accessibility automation reports the current step aloud and announces failed steps.
 - Execution failures are spoken with a short, actionable recovery suggestion.
 - JARVIS never treats an execution attempt as success merely because an AI response was generated; the executor result is checked first.
+
+## Omega Runtime Layer (integrated)
+
+The existing JARVIS architecture now also exposes a small, dependency-free core runtime layer:
+
+- central `JarvisState` + lifecycle-safe event bus
+- explicit capability states including permission/temporary/not-supported outcomes
+- risk assessment and developer dry-run/simulation
+- skill/plugin contracts and registry
+- mission lifecycle primitives with emergency-stop state
+- workflow model + validation boundary
+- secret/context sanitizer for external AI context
+- audit log, recovery policy, feature flags, state snapshots and a read-only digital-twin model
+
+These additions are intentionally additive: Android executors, Room repositories, voice, accessibility,
+HUD, wallpaper, AI and the existing command/task pipeline remain in place.

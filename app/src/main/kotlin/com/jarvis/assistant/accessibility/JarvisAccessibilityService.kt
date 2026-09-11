@@ -304,6 +304,27 @@ class JarvisAccessibilityService : AccessibilityService() {
         return dispatchGesture(gesture, null, null)
     }
 
+    fun remoteTap(x: Float, y: Float): Boolean {
+        val metrics = resources.displayMetrics
+        val path = android.graphics.Path().apply { moveTo(x.coerceIn(0f, metrics.widthPixels.toFloat()), y.coerceIn(0f, metrics.heightPixels.toFloat())) }
+        val gesture = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 60))
+            .build()
+        return dispatchGesture(gesture, null, null)
+    }
+
+    fun remoteSwipe(x1: Float, y1: Float, x2: Float, y2: Float): Boolean {
+        val path = android.graphics.Path().apply { moveTo(x1, y1); lineTo(x2, y2) }
+        val gesture = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 300))
+            .build()
+        return dispatchGesture(gesture, null, null)
+    }
+
+    fun remoteBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
+    fun remoteHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
+    fun remoteRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
+
     private fun findScrollable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (node.isScrollable) return node
         for (i in 0 until node.childCount) {
@@ -317,6 +338,7 @@ class JarvisAccessibilityService : AccessibilityService() {
         private const val MAX_ATTEMPTS_PER_STEP = 20 // ~8s at 400ms polling
         private const val MAX_SCROLL_ATTEMPTS_PER_STEP = 6 // caps how far it searches down a list
         private var instance: JarvisAccessibilityService? = null
+        fun current(): JarvisAccessibilityService? = instance
         private val queue = ArrayDeque<AutomationStep>()
         private var totalSteps = 0
         private var completedSteps = 0

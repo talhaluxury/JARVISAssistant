@@ -5,6 +5,7 @@ import com.jarvis.assistant.command.AndroidActionExecutor
 import com.jarvis.assistant.command.ExecutionResult
 import com.jarvis.assistant.command.JarvisCommand
 import kotlinx.coroutines.delay
+import com.jarvis.assistant.core.resource.ResourceLockManager
 import java.util.UUID
 
 /**
@@ -14,7 +15,8 @@ import java.util.UUID
  */
 class TaskEngine(
     private val executor: AndroidActionExecutor,
-    private val contextEngine: PhoneContextEngine
+    private val contextEngine: PhoneContextEngine,
+    private val resourceLocks: ResourceLockManager = ResourceLockManager()
 ) {
     @Volatile private var cancelled = false
     @Volatile private var paused = false
@@ -54,7 +56,10 @@ class TaskEngine(
                     onUpdate(task)
                     delay(500L * attempt)
                 }
-                result = executor.execute(command)
+                result = if (command is JarvisCommand.Automate) {
+                    val resource = command.packageName ?: contextEngine.snapshot().packageName ?: "foreground-ui"
+                    resourceLocks.withLock("ui:$resource") { executor.execute(command) }
+                } else executor.execute(command)
                 if (result is ExecutionResult.Success) {
                     if (command is JarvisCommand.Automate) {
                         var waited = 0

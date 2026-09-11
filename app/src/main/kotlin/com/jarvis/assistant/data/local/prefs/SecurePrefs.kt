@@ -94,6 +94,21 @@ class SecurePrefs(context: Context) {
         get() = prefs.getBoolean(KEY_FOCUS_MODE, false)
         set(value) = prefs.edit().putBoolean(KEY_FOCUS_MODE, value).apply()
 
+    /** Developer-only dry run. Plans and logs actions but never calls Android executors. */
+    var developerSimulationEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DEVELOPER_SIMULATION, false)
+        set(value) = prefs.edit().putBoolean(KEY_DEVELOPER_SIMULATION, value).apply()
+
+    /** Safe mode blocks autonomous execution until explicitly disabled by the user. */
+    var safeModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SAFE_MODE, false)
+        set(value) = prefs.edit().putBoolean(KEY_SAFE_MODE, value).apply()
+
+    /** Local retention window for operational logs, in days. */
+    var auditRetentionDays: Int
+        get() = prefs.getInt(KEY_AUDIT_RETENTION_DAYS, 30)
+        set(value) = prefs.edit().putInt(KEY_AUDIT_RETENTION_DAYS, value.coerceIn(1, 3650)).apply()
+
     companion object {
         private const val KEY_AI_API_KEY = "ai_api_key"
         private const val KEY_AI_BASE_URL = "ai_base_url"
@@ -109,5 +124,8 @@ class SecurePrefs(context: Context) {
         private const val KEY_CONVERSATION_TURNS = "conversation_session_turns"
         private const val KEY_SILENT_MODE = "silent_mode_enabled"
         private const val KEY_FOCUS_MODE = "focus_mode_enabled"
+        private const val KEY_DEVELOPER_SIMULATION = "developer_simulation_enabled"
+        private const val KEY_SAFE_MODE = "safe_mode_enabled"
+        private const val KEY_AUDIT_RETENTION_DAYS = "audit_retention_days"
     }
 }
