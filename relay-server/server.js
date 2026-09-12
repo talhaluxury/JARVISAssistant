@@ -35,7 +35,11 @@ function connect(c) {
   ws.onopen = () => { login.style.display = 'none'; ctrl.style.display = 'block'; status.textContent = 'Connected'; msg.textContent = ''; };
   ws.onmessage = e => {
     if (typeof e.data === 'string') {
-      try { const m = JSON.parse(e.data); status.textContent = m.message || m.type; } catch (_) {}
+      try {
+        const m = JSON.parse(e.data);
+        if (m.type === 'device') status.textContent = m.online ? 'Phone 1 online - loading screen…' : 'Phone 1 disconnected';
+        else status.textContent = m.message || m.type;
+      } catch (_) {}
     } else { img.src = URL.createObjectURL(e.data); }
   };
   ws.onclose = () => {
@@ -111,7 +115,8 @@ wss.on("connection", (ws, req) => {
       existing.device = ws;
       existing.createdAt = Date.now();
       if (existing.controller && existing.controller.readyState === WebSocket.OPEN) {
-        existing.controller.send(JSON.stringify({ type: "controller", connected: true }));
+        existing.controller.send(JSON.stringify({ type: "device", online: true }));
+        ws.send(JSON.stringify({ type: "controller", connected: true }));
       }
     } else {
       sessions.set(code, { device: ws, controller: null, createdAt: Date.now(), fixed: true });
@@ -134,7 +139,7 @@ wss.on("connection", (ws, req) => {
     const s = sessions.get(code);
     if (!s || s.device !== ws) return; // a newer connection already replaced this one
     if (s.controller && s.controller.readyState === WebSocket.OPEN) {
-      s.controller.send(JSON.stringify({ type: "controller", connected: false }));
+      s.controller.send(JSON.stringify({ type: "device", online: false }));
     }
     if (s.fixed) {
       s.device = null; // keep the session slot so a paired controller can wait for reconnect
@@ -164,6 +169,10 @@ server.on("upgrade", (req, socket, head) => {
       s.controller = ws;
       const online = s.device && s.device.readyState === WebSocket.OPEN;
       ws.send(JSON.stringify({ type: "paired", message: online ? "Paired" : "Paired - waiting for phone to come online" }));
+      // This was missing before: the device needs to know a controller just
+      // joined so it starts sending screen frames (it only streams frames
+      // while RemoteRelayClient.controllerConnected is true).
+      if (online) s.device.send(JSON.stringify({ type: "controller", connected: true }));
       ws.on("message", (data, isBinary) => {
         if (!isBinary && s.device && s.device.readyState === WebSocket.OPEN) s.device.send(data.toString());
       });
