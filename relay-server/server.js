@@ -142,7 +142,11 @@ wss.on("connection", (ws, req) => {
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  if (url.pathname !== "/ws/control") { socket.destroy(); return; }
+  // Only handle /ws/control here. Do NOT destroy other paths (like /ws/device) -
+  // the WebSocketServer above already claims and upgrades those on its own; if
+  // we destroy the raw socket afterwards it kills a connection that already
+  // succeeded, causing an instant connect/disconnect loop.
+  if (url.pathname !== "/ws/control") return;
   const code = (url.searchParams.get("code") || "").trim().toUpperCase();
   const s = sessions.get(code);
   if (!s) { socket.write("HTTP/1.1 404 Not Found\r\n\r\n"); socket.destroy(); return; }
