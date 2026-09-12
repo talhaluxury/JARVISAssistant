@@ -44,10 +44,11 @@
                  the separate MainLauncherAlias below so it can be hidden (disabled)
                  independently without touching MainActivity itself. MainActivity
                  stays reachable via the alias, via Settings > Apps, or via the
-                 secret-code receiver even while the icon is hidden. -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-            </intent-filter>
+                 secret-code receiver even while the icon is hidden. It needs no
+                 plain ACTION_MAIN filter either - explicit-component Intents
+                 (used by SecretCodeReceiver and the alias) don't need one, and
+                 some OEM launchers otherwise treat any exported ACTION_MAIN
+                 activity as pinnable, which let an icon survive hiding. -->
             <!-- Lets the user pick JARVIS as their phone's Home app -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
