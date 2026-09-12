@@ -86,7 +86,11 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end("Not found");
 });
 
-const wss = new WebSocket.Server({ server, path: "/ws/device" });
+// Both are noServer: we route every upgrade ourselves below. Letting either
+// one auto-bind to `server` with its own `path` is what caused the earlier
+// bug - it would abort (and destroy the socket for) any upgrade request
+// whose path didn't match its own, before our own logic ever ran.
+const wss = new WebSocket.Server({ noServer: true });
 const wsc = new WebSocket.Server({ noServer: true });
 
 wss.on("connection", (ws, req) => {
@@ -142,30 +146,36 @@ wss.on("connection", (ws, req) => {
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  // Only handle /ws/control here. Do NOT destroy other paths (like /ws/device) -
-  // the WebSocketServer above already claims and upgrades those on its own; if
-  // we destroy the raw socket afterwards it kills a connection that already
-  // succeeded, causing an instant connect/disconnect loop.
-  if (url.pathname !== "/ws/control") return;
-  const code = (url.searchParams.get("code") || "").trim().toUpperCase();
-  const s = sessions.get(code);
-  if (!s) { socket.write("HTTP/1.1 404 Not Found\r\n\r\n"); socket.destroy(); return; }
 
-  wsc.handleUpgrade(req, socket, head, (ws) => {
-    if (s.controller && s.controller !== ws && s.controller.readyState === WebSocket.OPEN) {
-      try { s.controller.close(); } catch (_) {}
-    }
-    s.controller = ws;
-    const online = s.device && s.device.readyState === WebSocket.OPEN;
-    ws.send(JSON.stringify({ type: "paired", message: online ? "Paired" : "Paired - waiting for phone to come online" }));
-    ws.on("message", (data, isBinary) => {
-      if (!isBinary && s.device && s.device.readyState === WebSocket.OPEN) s.device.send(data.toString());
+  if (url.pathname === "/ws/device") {
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+    return;
+  }
+
+  if (url.pathname === "/ws/control") {
+    const code = (url.searchParams.get("code") || "").trim().toUpperCase();
+    const s = sessions.get(code);
+    if (!s) { socket.write("HTTP/1.1 404 Not Found\r\n\r\n"); socket.destroy(); return; }
+
+    wsc.handleUpgrade(req, socket, head, (ws) => {
+      if (s.controller && s.controller !== ws && s.controller.readyState === WebSocket.OPEN) {
+        try { s.controller.close(); } catch (_) {}
+      }
+      s.controller = ws;
+      const online = s.device && s.device.readyState === WebSocket.OPEN;
+      ws.send(JSON.stringify({ type: "paired", message: online ? "Paired" : "Paired - waiting for phone to come online" }));
+      ws.on("message", (data, isBinary) => {
+        if (!isBinary && s.device && s.device.readyState === WebSocket.OPEN) s.device.send(data.toString());
+      });
+      ws.on("close", () => {
+        if (s.controller === ws) s.controller = null;
+        if (s.device && s.device.readyState === WebSocket.OPEN) s.device.send(JSON.stringify({ type: "controller", connected: false }));
+      });
     });
-    ws.on("close", () => {
-      if (s.controller === ws) s.controller = null;
-      if (s.device && s.device.readyState === WebSocket.OPEN) s.device.send(JSON.stringify({ type: "controller", connected: false }));
-    });
-  });
+    return;
+  }
+
+  socket.destroy();
 });
 
 // Fixed-id sessions whose device never comes back would otherwise sit in
