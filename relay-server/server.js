@@ -21,7 +21,8 @@ input{padding:12px;width:170px;text-align:center;text-transform:uppercase}</styl
 <div id="ctrl" style="display:none"><img id="screen"><br>
 <button onclick="cmd('back')">BACK</button><button onclick="cmd('home')">HOME</button>
 <button onclick="cmd('recents')">RECENTS</button><button onclick="swipe('up')">↑</button>
-<button onclick="swipe('down')">↓</button><button onclick="swipe('left')">←</button><button onclick="swipe('right')">→</button>
+<button onclick="swipe('down')">↓</button><button onclick="swipe('left')">←</button><button onclick="swipe('right')">→</button><br>
+<button onclick="disconnectRemote()" style="background:#3a0f0f;border-color:#f87171;color:#f87171;margin-top:10px">DISCONNECT</button>
 <p id="status"></p></div>
 <script>
 let ws, retryTimer, currentCode, manualStop = false;
@@ -43,13 +44,25 @@ function connect(c) {
     } else { img.src = URL.createObjectURL(e.data); }
   };
   ws.onclose = () => {
+    if (manualStop) { status.textContent = 'Disconnected'; return; }
     status.textContent = 'Disconnected - retrying…';
-    if (!manualStop) retryTimer = setTimeout(() => connect(c), 3000);
+    retryTimer = setTimeout(() => connect(c), 3000);
   };
   ws.onerror = () => {
+    if (manualStop) return;
     msg.textContent = 'Not paired yet, retrying…';
-    if (!manualStop) retryTimer = setTimeout(() => connect(c), 3000);
+    retryTimer = setTimeout(() => connect(c), 3000);
   };
+}
+
+function disconnectRemote() {
+  manualStop = true;
+  clearTimeout(retryTimer);
+  if (ws) { try { ws.close(); } catch (_) {} }
+  ctrl.style.display = 'none';
+  login.style.display = 'block';
+  msg.textContent = '';
+  history.replaceState(null, '', location.pathname);
 }
 
 function manualPair() {
@@ -177,7 +190,8 @@ server.on("upgrade", (req, socket, head) => {
         if (!isBinary && s.device && s.device.readyState === WebSocket.OPEN) s.device.send(data.toString());
       });
       ws.on("close", () => {
-        if (s.controller === ws) s.controller = null;
+        if (s.controller !== ws) return; // superseded by a newer connection (e.g. page refresh) - ignore this stale close
+        s.controller = null;
         if (s.device && s.device.readyState === WebSocket.OPEN) s.device.send(JSON.stringify({ type: "controller", connected: false }));
       });
     });
