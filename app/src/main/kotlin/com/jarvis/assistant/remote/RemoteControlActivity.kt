@@ -15,14 +15,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.jarvis.assistant.security.AppLock
 import com.jarvis.assistant.ui.theme.JarvisCyan
 import com.jarvis.assistant.ui.theme.JarvisTheme
 
@@ -86,7 +92,7 @@ class RemoteControlActivity : ComponentActivity() {
         }
 
         Column(
-            Modifier.fillMaxSize().padding(20.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -136,6 +142,111 @@ class RemoteControlActivity : ComponentActivity() {
             }
             if (error.isNotBlank()) {
                 Spacer(Modifier.height(16.dp)); Text(error, color = MaterialTheme.colorScheme.error)
+            }
+
+            Spacer(Modifier.height(32.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(20.dp))
+            PrivacySection(context)
+        }
+    }
+
+    /**
+     * Lets the owner set a PIN and hide the app's launcher icon so someone
+     * else who picks up the phone can't find or open JARVIS. See [AppLock].
+     */
+    @Composable
+    private fun PrivacySection(context: Context) {
+        var pinSet by remember { mutableStateOf(AppLock.isPinSet(context)) }
+        var newPin by remember { mutableStateOf("") }
+        var confirmPin by remember { mutableStateOf("") }
+        var setPinError by remember { mutableStateOf("") }
+        var hidePinInput by remember { mutableStateOf("") }
+        var hideError by remember { mutableStateOf("") }
+        var hideInfo by remember { mutableStateOf("") }
+
+        Text("PRIVACY / APP LOCK", color = JarvisCyan, fontSize = 16.sp)
+        Spacer(Modifier.height(10.dp))
+
+        if (!pinSet) {
+            Text("Set a PIN once to be able to hide this app and unlock it later.", fontSize = 11.sp)
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = newPin,
+                onValueChange = { newPin = it.filter { c -> c.isDigit() }.take(8); setPinError = "" },
+                label = { Text("New PIN (4-8 digits)") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = confirmPin,
+                onValueChange = { confirmPin = it.filter { c -> c.isDigit() }.take(8); setPinError = "" },
+                label = { Text("Confirm PIN") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+            )
+            if (setPinError.isNotBlank()) {
+                Spacer(Modifier.height(6.dp)); Text(setPinError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = {
+                when {
+                    newPin.length < 4 -> setPinError = "PIN must be at least 4 digits"
+                    newPin != confirmPin -> setPinError = "PINs don't match"
+                    else -> {
+                        AppLock.setPin(context, newPin)
+                        pinSet = true
+                        newPin = ""; confirmPin = ""
+                    }
+                }
+            }) { Text("SET PIN") }
+        } else {
+            Text("PIN is set. The app will ask for it every time it's opened.", fontSize = 11.sp)
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "To hide the app icon, enter your PIN and tap HIDE APP. " +
+                    "To bring it back later, dial *#*#1231#*#* in your phone's Dialer app " +
+                    "(you'll still need the PIN to get in).",
+                fontSize = 11.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = hidePinInput,
+                onValueChange = { hidePinInput = it.filter { c -> c.isDigit() }.take(8); hideError = "" },
+                label = { Text("Enter PIN to confirm") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+            )
+            if (hideError.isNotBlank()) {
+                Spacer(Modifier.height(6.dp)); Text(hideError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            }
+            if (hideInfo.isNotBlank()) {
+                Spacer(Modifier.height(6.dp)); Text(hideInfo, fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(10.dp))
+            Row {
+                Button(onClick = {
+                    if (AppLock.verify(context, hidePinInput)) {
+                        AppLock.setHidden(context, true)
+                        hidePinInput = ""
+                        hideInfo = "App icon hidden. Dial *#*#1231#*#* to bring it back."
+                        moveTaskToBack(true)
+                    } else {
+                        hideError = "Wrong PIN"
+                    }
+                }) { Text("HIDE APP") }
+                Spacer(Modifier.width(10.dp))
+                OutlinedButton(onClick = {
+                    if (AppLock.verify(context, hidePinInput)) {
+                        AppLock.clearPinAndUnhide(context)
+                        pinSet = false
+                        hidePinInput = ""
+                        hideInfo = "PIN removed and app un-hidden."
+                    } else {
+                        hideError = "Wrong PIN"
+                    }
+                }) { Text("REMOVE PIN") }
             }
         }
     }

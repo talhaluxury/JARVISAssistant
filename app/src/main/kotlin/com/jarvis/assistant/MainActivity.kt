@@ -16,7 +16,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.jarvis.assistant.navigation.JarvisNavGraph
+import com.jarvis.assistant.security.AppLock
+import com.jarvis.assistant.security.AppLockScreen
 import com.jarvis.assistant.ui.screens.boot.BootScreen
 import com.jarvis.assistant.ui.theme.JarvisTheme
 
@@ -26,7 +29,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             JarvisTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    JarvisApp()
+                    val context = LocalContext.current
+                    // Require the PIN on every cold start whenever one is set, regardless of
+                    // whether the launcher icon happens to be visible right now.
+                    var unlocked by remember { mutableStateOf(!AppLock.isPinSet(context)) }
+                    if (unlocked) {
+                        JarvisApp()
+                    } else {
+                        AppLockScreen(onUnlocked = { unlocked = true })
+                    }
                 }
             }
         }

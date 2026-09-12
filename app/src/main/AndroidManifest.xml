@@ -40,9 +40,13 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
             android:launchMode="singleTop"
             android:theme="@android:style/Theme.Material.NoActionBar">
+            <!-- No LAUNCHER category here on purpose - the launcher icon lives on
+                 the separate MainLauncherAlias below so it can be hidden (disabled)
+                 independently without touching MainActivity itself. MainActivity
+                 stays reachable via the alias, via Settings > Apps, or via the
+                 secret-code receiver even while the icon is hidden. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <!-- Lets the user pick JARVIS as their phone's Home app -->
             <intent-filter>
@@ -51,6 +55,20 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <activity-alias
+            android:name=".MainLauncherAlias"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <service
             android:name=".accessibility.JarvisAccessibilityService"
@@ -79,6 +97,18 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Dial *#*#1231#*#* in the phone's own Dialer app to bring JARVIS's
+             icon back and open it if it has been hidden (see AppLock.kt).
+             Support for this varies by phone/dialer app. -->
+        <receiver
+            android:name=".security.SecretCodeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SECRET_CODE" />
+                <data android:scheme="android_secret_code" android:host="1231" />
             </intent-filter>
         </receiver>
 
