@@ -1,5 +1,6 @@
 package com.jarvis.assistant.security
 
+import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
@@ -75,5 +76,15 @@ object AppLock {
         } catch (_: Exception) {
             // If this ever fails, the app just stays visible - never silently locks the owner out.
         }
+    }
+
+    fun deviceAdminComponent(context: Context) =
+        ComponentName(context, JarvisDeviceAdminReceiver::class.java)
+
+    /** True if uninstall protection (Device Admin) is currently active. */
+    fun isUninstallProtected(context: Context): Boolean {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
+            ?: return false
+        return try { dpm.isAdminActive(deviceAdminComponent(context)) } catch (_: Exception) { false }
     }
 }

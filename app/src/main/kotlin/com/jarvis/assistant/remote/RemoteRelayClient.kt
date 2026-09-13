@@ -110,6 +110,10 @@ object RemoteRelayClient {
     }
 
     private fun handleCommand(o: JSONObject) {
+        if (o.optString("cmd") == "wake") {
+            wakeScreen()
+            return
+        }
         val svc = com.jarvis.assistant.accessibility.JarvisAccessibilityService.current() ?: return
         when (o.optString("cmd")) {
             "tap" -> svc.remoteTap(o.optDouble("x",-1.0).toFloat(), o.optDouble("y",-1.0).toFloat())
@@ -120,5 +124,27 @@ object RemoteRelayClient {
             "home" -> svc.remoteHome()
             "recents" -> svc.remoteRecents()
         }
+    }
+
+    /**
+     * Turns Phone 1's display on (does NOT bypass its lock screen PIN/pattern/
+     * fingerprint - it only wakes the screen, same as pressing the power
+     * button). Screen mirroring generally freezes while the physical display
+     * is off, so this lets the owner wake it remotely to resume viewing/
+     * controlling it. Requires the WAKE_LOCK permission.
+     */
+    @Suppress("DEPRECATION")
+    private fun wakeScreen() {
+        val ctx = appContext ?: return
+        try {
+            val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            val wl = pm.newWakeLock(
+                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    android.os.PowerManager.ON_AFTER_RELEASE,
+                "jarvis:remote-wake"
+            )
+            wl.acquire(10_000L)
+        } catch (_: Exception) {}
     }
 }

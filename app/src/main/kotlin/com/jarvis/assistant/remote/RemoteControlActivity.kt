@@ -2,6 +2,7 @@ package com.jarvis.assistant.remote
 
 import com.jarvis.assistant.BuildConfig
 import android.app.Activity
+import android.app.admin.DevicePolicyManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -117,6 +118,20 @@ class RemoteControlActivity : ComponentActivity() {
                 }
             }) { Text("COPY DIRECT LINK FOR PHONE 2") }
             if (copiedMsg.isNotBlank()) { Spacer(Modifier.height(6.dp)); Text(copiedMsg, fontSize = 12.sp) }
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(onClick = {
+                val base = BuildConfig.DEFAULT_REMOTE_RELAY_URL.trimEnd('/')
+                copiedMsg = if (base.isNotBlank()) {
+                    copyToClipboard(context, "JARVIS relay URL", base)
+                    "Website link copied (paste it, then type the code)"
+                } else {
+                    "Relay URL not configured in this APK"
+                }
+            }) { Text("COPY WEBSITE LINK (NO CODE)") }
+            if (BuildConfig.DEFAULT_REMOTE_RELAY_URL.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Text(BuildConfig.DEFAULT_REMOTE_RELAY_URL, fontSize = 11.sp)
+            }
             Spacer(Modifier.height(20.dp))
             if (!started) {
                 Text("Internet relay + live screen + touch control")
@@ -248,6 +263,47 @@ class RemoteControlActivity : ComponentActivity() {
                     }
                 }) { Text("REMOVE PIN") }
             }
+
+            Spacer(Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(20.dp))
+            UninstallProtectionSection(context)
+        }
+    }
+
+    @Composable
+    private fun UninstallProtectionSection(context: Context) {
+        var isProtected by remember { mutableStateOf(AppLock.isUninstallProtected(context)) }
+        val adminLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { isProtected = AppLock.isUninstallProtected(context) }
+
+        Text("UNINSTALL PROTECTION", color = JarvisCyan, fontSize = 16.sp)
+        Spacer(Modifier.height(10.dp))
+        if (isProtected) {
+            Text(
+                "Protection is ON. The \"Uninstall\" button for JARVIS is disabled in " +
+                    "Settings > Apps. To remove the app, first go to Settings > Security > " +
+                    "Device admin apps and deactivate JARVIS there, then uninstall as usual.",
+                fontSize = 11.sp
+            )
+        } else {
+            Text(
+                "Turning this on disables the normal \"Uninstall\" button for this app, " +
+                    "so it can't be casually removed. It must be deactivated from " +
+                    "Settings > Security > Device admin apps first.",
+                fontSize = 11.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = {
+                val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                    .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, AppLock.deviceAdminComponent(context))
+                    .putExtra(
+                        DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                        "This lets JARVIS block casual uninstalling from Settings."
+                    )
+                adminLauncher.launch(intent)
+            }) { Text("ENABLE UNINSTALL PROTECTION") }
         }
     }
 }

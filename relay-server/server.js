@@ -21,6 +21,7 @@ input{padding:12px;width:170px;text-align:center;text-transform:uppercase}</styl
 <div id="ctrl" style="display:none"><img id="screen"><br>
 <button onclick="cmd('back')">BACK</button><button onclick="cmd('home')">HOME</button>
 <button onclick="cmd('recents')">RECENTS</button><button onclick="swipe('up')">↑</button>
+<button onclick="cmd('wake')" style="background:#0c2b1a;border-color:#4ade80;color:#4ade80">WAKE SCREEN</button>
 <button onclick="swipe('down')">↓</button><button onclick="swipe('left')">←</button><button onclick="swipe('right')">→</button><br>
 <button onclick="disconnectRemote()" style="background:#3a0f0f;border-color:#f87171;color:#f87171;margin-top:10px">DISCONNECT</button>
 <p id="status"></p></div>
