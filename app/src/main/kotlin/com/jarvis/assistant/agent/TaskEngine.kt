@@ -98,7 +98,7 @@ class TaskEngine(
                 replans++
                 task = task.copy(status = TaskStatus.RECOVERING, retryCount = retries)
                 onUpdate(task)
-                val revised = runCatching { replanner.invoke(request, command, domain, result.message) }.getOrNull()
+                val revised = runCatching { replanner?.invoke(request, command, domain, result.message) }.getOrNull()
                 if (revised != null && revised != command) {
                     command = revised
                     label = "[${domain.label}] ${command.describeForAgent()} (replanned)"
