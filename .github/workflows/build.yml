@@ -20,7 +20,15 @@ jobs:
       - name: Build debug APK
         env:
           REMOTE_RELAY_URL: ${{ vars.REMOTE_RELAY_URL }}
-        run: gradle assembleDebug -PREMOTE_RELAY_URL="$REMOTE_RELAY_URL"
+          AI_DEFAULT_API_KEY: ${{ secrets.AI_DEFAULT_API_KEY }}
+          AI_DEFAULT_BASE_URL: ${{ secrets.AI_DEFAULT_BASE_URL }}
+          AI_DEFAULT_MODEL: ${{ secrets.AI_DEFAULT_MODEL }}
+        run: >
+          gradle assembleDebug
+          -PREMOTE_RELAY_URL="$REMOTE_RELAY_URL"
+          -PAI_DEFAULT_API_KEY="$AI_DEFAULT_API_KEY"
+          -PAI_DEFAULT_BASE_URL="$AI_DEFAULT_BASE_URL"
+          -PAI_DEFAULT_MODEL="$AI_DEFAULT_MODEL"
       - uses: actions/upload-artifact@v4
         with:
           name: jarvis-debug-apk

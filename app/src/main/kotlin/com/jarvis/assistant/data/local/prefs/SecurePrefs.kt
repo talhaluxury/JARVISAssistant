@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.jarvis.assistant.BuildConfig
 
 /**
  * Stores the user's own AI provider API key and app settings using
@@ -26,15 +27,15 @@ class SecurePrefs(context: Context) {
     )
 
     var aiApiKey: String?
-        get() = prefs.getString(KEY_AI_API_KEY, null)
+        get() = prefs.getString(KEY_AI_API_KEY, null)?.takeUnless { it.isBlank() } ?: BuildConfig.DEFAULT_AI_API_KEY.ifBlank { null }
         set(value) = prefs.edit().putString(KEY_AI_API_KEY, value).apply()
 
     var aiBaseUrl: String?
-        get() = prefs.getString(KEY_AI_BASE_URL, null)
+        get() = prefs.getString(KEY_AI_BASE_URL, null)?.takeUnless { it.isBlank() } ?: BuildConfig.DEFAULT_AI_BASE_URL.ifBlank { null }
         set(value) = prefs.edit().putString(KEY_AI_BASE_URL, value).apply()
 
     var aiModel: String
-        get() = prefs.getString(KEY_AI_MODEL, "gpt-4o-mini") ?: "gpt-4o-mini"
+        get() = prefs.getString(KEY_AI_MODEL, null)?.takeUnless { it.isBlank() } ?: BuildConfig.DEFAULT_AI_MODEL.ifBlank { "gpt-4o-mini" }
         set(value) = prefs.edit().putString(KEY_AI_MODEL, value).apply()
 
     var searchApiKey: String?
@@ -48,6 +49,11 @@ class SecurePrefs(context: Context) {
     var speechRate: Float
         get() = prefs.getFloat(KEY_SPEECH_RATE, 1.0f)
         set(value) = prefs.edit().putFloat(KEY_SPEECH_RATE, value).apply()
+
+    /** Below 1.0 = deeper/heavier voice. Defaults lower than normal for a JARVIS-style tone. */
+    var voicePitch: Float
+        get() = prefs.getFloat(KEY_VOICE_PITCH, 0.82f)
+        set(value) = prefs.edit().putFloat(KEY_VOICE_PITCH, value).apply()
 
     var voiceName: String?
         get() = prefs.getString(KEY_VOICE_NAME, null)
@@ -116,6 +122,7 @@ class SecurePrefs(context: Context) {
         private const val KEY_SEARCH_API_KEY = "search_api_key"
         private const val KEY_LANGUAGE = "preferred_language"
         private const val KEY_SPEECH_RATE = "speech_rate"
+        private const val KEY_VOICE_PITCH = "voice_pitch"
         private const val KEY_VOICE_NAME = "voice_name"
         private const val KEY_WAKE_WORD = "wake_word_enabled"
         private const val KEY_CONFIRM_EVERY_ACTION = "confirm_every_action"

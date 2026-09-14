@@ -16,9 +16,23 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // API key/base URL are supplied at runtime in Settings (stored encrypted on-device),
-        // NOT baked into the APK. These manifest placeholders only carry non-secret defaults.
-        buildConfigField("String", "DEFAULT_AI_BASE_URL", "\"https://api.openai.com/\"")
+        // Non-secret runtime defaults, always safe to bake in.
+        val aiBaseUrl = ((project.findProperty("AI_DEFAULT_BASE_URL") as String?)?.trim()?.takeIf { it.isNotBlank() })
+            ?: "https://api.openai.com/"
+        buildConfigField("String", "DEFAULT_AI_BASE_URL", "\"${aiBaseUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+
+        val aiModel = ((project.findProperty("AI_DEFAULT_MODEL") as String?)?.trim()?.takeIf { it.isNotBlank() })
+            ?: "gpt-4o-mini"
+        buildConfigField("String", "DEFAULT_AI_MODEL", "\"${aiModel.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+
+        // Only ever pass this in via a GitHub Actions *secret* (never a committed file / repo
+        // variable) - this repo is public, and this field ends up readable inside the built APK
+        // regardless, so treat it as "shipped with the app", not truly hidden. Empty by default:
+        // Settings still lets the owner type/paste their own key on-device at any time, which
+        // always takes priority over this baked-in default (see SecurePrefs.aiApiKey).
+        val aiApiKey = (project.findProperty("AI_DEFAULT_API_KEY") as String?)?.trim() ?: ""
+        buildConfigField("String", "DEFAULT_AI_API_KEY", "\"${aiApiKey.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+
         val remoteRelayUrl = (project.findProperty("REMOTE_RELAY_URL") as String?)?.trim()?.trimEnd('/') ?: ""
         buildConfigField("String", "DEFAULT_REMOTE_RELAY_URL", "\"${remoteRelayUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
     }

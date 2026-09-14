@@ -47,6 +47,11 @@ class TextToSpeechManager(context: Context) {
         tts?.setSpeechRate(rate.coerceIn(0.5f, 2.0f))
     }
 
+    /** Lower than 1.0 = deeper/heavier voice (the "Iron Man JARVIS" effect); higher = lighter. */
+    fun setPitch(pitch: Float) {
+        tts?.setPitch(pitch.coerceIn(0.5f, 2.0f))
+    }
+
     /**
      * Lists the voices this device's TTS engine offers, male-sounding ones first. Android's TTS
      * Voice class has no explicit gender field, so this relies on the naming convention most
@@ -84,9 +89,11 @@ class TextToSpeechManager(context: Context) {
 
     private fun looksMale(voice: Voice): Boolean {
         val n = voice.name.lowercase()
+        val femaleHints = listOf("female", "#female", "-a-", "_a_")
+        val maleHints = listOf("male", "#male", "-b-", "-c-", "-d-", "_b_", "_c_", "_d_")
         return when {
-            n.contains("female") -> false
-            n.contains("male") -> true
+            femaleHints.any { n.contains(it) } -> false
+            maleHints.any { n.contains(it) } -> true
             else -> false
         }
     }

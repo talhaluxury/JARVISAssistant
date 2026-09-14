@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,7 +36,9 @@ import com.jarvis.assistant.ui.theme.JarvisBackground
 import com.jarvis.assistant.ui.theme.JarvisCyan
 import com.jarvis.assistant.ui.theme.JarvisSuccess
 import com.jarvis.assistant.ui.theme.JarvisTextSecondary
+import com.jarvis.assistant.voice.TextToSpeechManager
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -57,9 +60,19 @@ private val bootSteps = listOf(
 fun BootScreen(onFinished: () -> Unit) {
     var visibleSteps by remember { mutableStateOf(0) }
     var showWelcome by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
+    // A short-lived TTS instance just for the boot line, deliberately separate from the app's
+    // main TextToSpeechManager (kept in AppContainer) - BootScreen has zero dependency on the
+    // rest of the UI tree by design, and this engine is shut down as soon as boot finishes.
     LaunchedEffect(Unit) {
-        delay(300) // let the core render a couple of rotations before the checklist starts
+        val bootVoice = TextToSpeechManager(context)
+        delay(300) // let the TTS engine finish its own async init
+        bootVoice.setPitch(0.8f)   // deeper/heavier tone
+        bootVoice.setRate(0.92f)   // very slightly slower - reads as more deliberate/robotic
+        bootVoice.autoSelectMaleVoice()?.let(bootVoice::setVoice)
+        launch { bootVoice.speak("Jarvis online. All systems operational.") }
+
         for (i in bootSteps.indices) {
             delay(180)
             visibleSteps = i + 1
@@ -67,6 +80,7 @@ fun BootScreen(onFinished: () -> Unit) {
         delay(280)
         showWelcome = true
         delay(650)
+        bootVoice.shutdown()
         onFinished()
     }
 

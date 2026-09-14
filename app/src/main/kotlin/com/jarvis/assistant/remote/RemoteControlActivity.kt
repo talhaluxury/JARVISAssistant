@@ -1,6 +1,9 @@
 package com.jarvis.assistant.remote
 
 import com.jarvis.assistant.BuildConfig
+import com.jarvis.assistant.JarvisApplication
+import com.jarvis.assistant.agent.AgentEvent
+import com.jarvis.assistant.command.describe
 import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.ClipData
@@ -30,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.jarvis.assistant.security.AppLock
+import kotlinx.coroutines.launch
 import com.jarvis.assistant.ui.theme.JarvisCyan
 import com.jarvis.assistant.ui.theme.JarvisTheme
 
@@ -162,6 +166,11 @@ class RemoteControlActivity : ComponentActivity() {
             Spacer(Modifier.height(32.dp))
             HorizontalDivider()
             Spacer(Modifier.height(20.dp))
+            AutonomousAgentSection(context)
+
+            Spacer(Modifier.height(32.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(20.dp))
             AutoConnectSection(context)
 
             Spacer(Modifier.height(32.dp))
@@ -182,6 +191,106 @@ class RemoteControlActivity : ComponentActivity() {
      * prompt neither this app nor the linked page can skip or hide). Only
      * share this link with a device/person who has agreed to share it.
      */
+    /**
+     * A real multi-step autonomous agent: give it a goal in plain language and
+     * it repeatedly asks the AI for one next action, runs it, and feeds the
+     * real result back so the AI can adapt - instead of committing to a fixed
+     * plan made upfront. It automatically delegates to a focused specialist
+     * (messaging/navigation/system/research/general) based on the goal.
+     * Anything the app considers high-risk (sending a message, deleting
+     * memory, etc.) pauses here for a tap to approve or cancel, same as the
+     * rest of the app - full autonomy for everything else.
+     *
+     * Requires an AI API key to already be configured in Settings.
+     */
+    @Composable
+    private fun AutonomousAgentSection(context: Context) {
+        val scope = rememberCoroutineScope()
+        var goal by remember { mutableStateOf("") }
+        var running by remember { mutableStateOf(false) }
+        var log by remember { mutableStateOf(listOf<String>()) }
+        var pendingConfirmText by remember { mutableStateOf<String?>(null) }
+
+        val orchestrator = remember {
+            (context.applicationContext as JarvisApplication).container.autonomousAgentOrchestrator
+        }
+
+        fun appendLog(line: String) { log = log + line }
+
+        fun handleEvent(event: AgentEvent) {
+            when (event) {
+                is AgentEvent.Started -> appendLog("▶ Using ${event.agentName}")
+                is AgentEvent.Thinking -> appendLog("… step ${event.stepNumber}: thinking")
+                is AgentEvent.StepExecuted -> appendLog("✓ ${event.command.describe()} → ${event.result.message}")
+                is AgentEvent.AwaitingConfirmation -> {
+                    pendingConfirmText = event.command.describe()
+                    running = false
+                }
+                is AgentEvent.Done -> { appendLog("✔ Done: ${event.summary}"); running = false }
+                is AgentEvent.Stopped -> { appendLog("■ Stopped: ${event.reason}"); running = false }
+                is AgentEvent.Error -> { appendLog("✗ Error: ${event.message}"); running = false }
+            }
+        }
+
+        Text("AUTONOMOUS MULTI-AGENT", color = JarvisCyan, fontSize = 16.sp)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Give it a goal and it works through it step by step, checking real results as it " +
+                "goes and adapting if needed - instead of one fixed plan. High-risk steps (sending " +
+                "messages, deleting memory) pause for your approval below. Needs an AI API key set " +
+                "in Settings first.",
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = goal,
+            onValueChange = { goal = it },
+            label = { Text("Goal, e.g. \"find the weather and set a 7am alarm\"") },
+            enabled = !running
+        )
+        Spacer(Modifier.height(10.dp))
+        Button(
+            enabled = !running && goal.isNotBlank(),
+            onClick = {
+                running = true
+                log = emptyList()
+                pendingConfirmText = null
+                scope.launch {
+                    orchestrator.run(goal) { event -> handleEvent(event) }
+                }
+            }
+        ) { Text(if (running) "RUNNING…" else "RUN AGENT") }
+
+        if (pendingConfirmText != null) {
+            Spacer(Modifier.height(10.dp))
+            Text("Needs approval: $pendingConfirmText", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+            Row {
+                Button(onClick = {
+                    val text = pendingConfirmText
+                    pendingConfirmText = null
+                    running = true
+                    appendLog("✓ Approved: $text")
+                    scope.launch {
+                        orchestrator.confirmPendingAndContinue { event -> handleEvent(event) }
+                    }
+                }) { Text("APPROVE") }
+                Spacer(Modifier.width(10.dp))
+                OutlinedButton(onClick = {
+                    orchestrator.cancelPending()
+                    appendLog("✗ Cancelled by you")
+                    pendingConfirmText = null
+                }) { Text("CANCEL") }
+            }
+        }
+
+        if (log.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Column(Modifier.fillMaxWidth()) {
+                log.forEach { Text(it, fontSize = 11.sp) }
+            }
+        }
+    }
+
     /**
      * Lets the owner keep JARVIS connected to the relay in the background at
      * all times (survives app restarts and, when Android allows it, reboots),

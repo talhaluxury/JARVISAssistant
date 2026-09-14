@@ -642,6 +642,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         WallpaperEventBus.emit(JarvisHudState.COMPLETED, "VOICE", "RESPONDING")
         val prefs = container.securePrefs
         container.textToSpeechManager.setRate(prefs.speechRate)
+        container.textToSpeechManager.setPitch(prefs.voicePitch)
         // Default to a male-sounding voice the first time, then remember whatever the user picks.
         val voiceName = prefs.voiceName ?: container.textToSpeechManager.autoSelectMaleVoice()?.also { prefs.voiceName = it }
         container.textToSpeechManager.setVoice(voiceName)

@@ -107,6 +107,18 @@ class AppContainer(context: Context) {
     val agentPlanner = AgentPlanner()
     val taskEngine = TaskEngine(actionExecutor, phoneContextEngine, resourceLocks)
 
+    // Iterative multi-agent runner: unlike agentPlanner's single-shot plan, this asks the AI
+    // for one action at a time and adapts based on real results (see AutonomousAgentOrchestrator).
+    val agentRouter = com.jarvis.assistant.agent.AgentRouter()
+    val autonomousAgentOrchestrator = com.jarvis.assistant.agent.AutonomousAgentOrchestrator(
+        aiService = aiService,
+        actionExecutor = actionExecutor,
+        riskEngine = riskEngine,
+        missionManager = missionManager,
+        auditLog = auditLog,
+        router = agentRouter
+    )
+
     // #35-58 AI Brain layer: capability truth, structured intent/context, memory relevance,
     // self-diagnostics, and controlled learning — see individual class docs for the spec section.
     val capabilityRegistry = CapabilityRegistry(context, securePrefs)

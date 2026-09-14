@@ -106,6 +106,7 @@ class OverlayService : Service() {
         setState(VoiceState.SPEAKING)
         val prefs = container.securePrefs
         container.textToSpeechManager.setRate(prefs.speechRate)
+        container.textToSpeechManager.setPitch(prefs.voicePitch)
         val voiceName = prefs.voiceName ?: container.textToSpeechManager.autoSelectMaleVoice()?.also { prefs.voiceName = it }
         container.textToSpeechManager.setVoice(voiceName)
         container.textToSpeechManager.speak(text)
@@ -478,6 +479,7 @@ class OverlayService : Service() {
         setState(VoiceState.SPEAKING)
         val prefs = container.securePrefs
         container.textToSpeechManager.setRate(prefs.speechRate)
+        container.textToSpeechManager.setPitch(prefs.voicePitch)
         val voiceName = prefs.voiceName ?: container.textToSpeechManager.autoSelectMaleVoice()?.also { prefs.voiceName = it }
         container.textToSpeechManager.setVoice(voiceName)
 
