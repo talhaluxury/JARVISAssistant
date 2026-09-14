@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,10 +27,14 @@ class VoiceActivityDetector(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.Default)
 
     /**
-     * [amplitudeThreshold] is a tunable RMS cutoff. If a device's speaker leaks enough of
-     * JARVIS's own voice back into the mic to false-trigger this, raise the threshold.
+     * [amplitudeThreshold] is a tunable RMS cutoff and [requiredConsecutiveHits] how many
+     * loud reads in a row are needed before firing. Raised from the original defaults because
+     * on many phones (especially without earphones) the device's own speaker output leaks
+     * into the mic loudly enough to falsely trigger this mid-sentence, cutting JARVIS off.
+     * [AcousticEchoCanceler] (below) is the real fix for that when the device supports it;
+     * these thresholds are the safety margin for devices where it isn't available.
      */
-    fun start(amplitudeThreshold: Double = 2800.0, onSpeechDetected: () -> Unit) {
+    fun start(amplitudeThreshold: Double = 4200.0, requiredConsecutiveHits: Int = 6, onSpeechDetected: () -> Unit) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) return
@@ -42,7 +47,7 @@ class VoiceActivityDetector(private val context: Context) {
             if (minBuf <= 0) return@launch
             val record = try {
                 AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                     sampleRate,
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT,
@@ -55,6 +60,16 @@ class VoiceActivityDetector(private val context: Context) {
                 record.release()
                 return@launch
             }
+
+            // The actual fix: cancel the device's own speaker output (JARVIS's own voice)
+            // out of what the mic picks up, instead of just picking a high volume cutoff.
+            var echoCanceler: AcousticEchoCanceler? = null
+            if (AcousticEchoCanceler.isAvailable()) {
+                try {
+                    echoCanceler = AcousticEchoCanceler.create(record.audioSessionId)?.apply { enabled = true }
+                } catch (_: Exception) {}
+            }
+
             val buffer = ShortArray(minBuf)
             var consecutiveHits = 0
             try {
@@ -66,7 +81,7 @@ class VoiceActivityDetector(private val context: Context) {
                         for (i in 0 until read) sum += (buffer[i] * buffer[i]).toDouble()
                         val rms = sqrt(sum / read)
                         consecutiveHits = if (rms > amplitudeThreshold) consecutiveHits + 1 else 0
-                        if (consecutiveHits >= 3) {
+                        if (consecutiveHits >= requiredConsecutiveHits) {
                             onSpeechDetected()
                             break
                         }
@@ -78,6 +93,7 @@ class VoiceActivityDetector(private val context: Context) {
                 try {
                     record.stop()
                 } catch (e: Exception) { }
+                try { echoCanceler?.release() } catch (_: Exception) {}
                 record.release()
             }
         }

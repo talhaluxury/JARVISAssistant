@@ -1,6 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Android 11+ restricts which other installed apps this app can even see via
+         PackageManager unless declared here. The plain ACTION_MAIN/CATEGORY_LAUNCHER
+         query used to list "what apps can I open" is supposed to be automatically
+         exempt from this, but some OEM Android skins don't reliably honor that
+         exemption - which is exactly why an installed app like WhatsApp could
+         otherwise be invisible to "open WhatsApp" even though it's on the phone.
+         Redeclaring it explicitly here removes any doubt, and the specific
+         packages below guarantee visibility for very common apps regardless. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.instagram.android" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="com.google.android.gm" />
+        <package android:name="com.android.chrome" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.android.vending" />
+    </queries>
+
     <!-- Voice input -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
