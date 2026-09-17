@@ -38,6 +38,20 @@ class SecurePrefs(context: Context) {
         get() = prefs.getString(KEY_AI_MODEL, null)?.takeUnless { it.isBlank() } ?: BuildConfig.DEFAULT_AI_MODEL.ifBlank { "gpt-4o-mini" }
         set(value) = prefs.edit().putString(KEY_AI_MODEL, value).apply()
 
+    /**
+     * What the owner has actually typed and saved in Settings themselves - null/blank if
+     * they haven't, even when a baked-in default is silently in effect via [aiApiKey] etc.
+     * The Settings screen shows these (so the box stays empty until the owner types their
+     * own key), never [aiApiKey]/[aiBaseUrl]/[aiModel] directly - those are for actual API
+     * calls only and would otherwise leak the baked-in key into the visible UI.
+     */
+    val aiApiKeyRaw: String? get() = prefs.getString(KEY_AI_API_KEY, null)?.takeUnless { it.isBlank() }
+    val aiBaseUrlRaw: String? get() = prefs.getString(KEY_AI_BASE_URL, null)?.takeUnless { it.isBlank() }
+    val aiModelRaw: String? get() = prefs.getString(KEY_AI_MODEL, null)?.takeUnless { it.isBlank() }
+
+    /** True if a key is actually in effect right now, whether the owner typed it or it's the baked-in default. */
+    fun hasEffectiveApiKey(): Boolean = !aiApiKey.isNullOrBlank()
+
     var searchApiKey: String?
         get() = prefs.getString(KEY_SEARCH_API_KEY, null)
         set(value) = prefs.edit().putString(KEY_SEARCH_API_KEY, value).apply()

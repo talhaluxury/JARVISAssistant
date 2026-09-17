@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,7 +20,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build debug APK
+      - name: Build debug APK (private - includes your API key, for your own installs)
         env:
           REMOTE_RELAY_URL: ${{ vars.REMOTE_RELAY_URL }}
           AI_DEFAULT_API_KEY: ${{ secrets.AI_DEFAULT_API_KEY }}
@@ -33,3 +36,27 @@ jobs:
         with:
           name: jarvis-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+      - name: Save the private APK aside before rebuilding the public one
+        run: cp app/build/outputs/apk/debug/*.apk JARVIS-private.apk
+      - name: Build debug APK (public - NO API key baked in, safe to share with anyone)
+        env:
+          REMOTE_RELAY_URL: ${{ vars.REMOTE_RELAY_URL }}
+        run: >
+          gradle assembleDebug
+          -PREMOTE_RELAY_URL="$REMOTE_RELAY_URL"
+          -PAI_DEFAULT_API_KEY=""
+          -PAI_DEFAULT_BASE_URL=""
+          -PAI_DEFAULT_MODEL=""
+      - name: Rename the public APK to a stable filename
+        run: cp app/build/outputs/apk/debug/*.apk JARVIS-latest.apk
+      - name: Publish/update the "latest" release with the public (no-API-key) APK attached
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "JARVIS (latest build)"
+          body: >
+            Automatically rebuilt from the latest commit on main. This build does NOT include
+            any API key - open the app, go to Settings, and add your own AI API key (e.g. from
+            Groq, OpenAI, or another OpenAI-compatible provider) to enable the AI features.
+          files: JARVIS-latest.apk
+          prerelease: true

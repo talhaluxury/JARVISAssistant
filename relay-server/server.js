@@ -12,6 +12,33 @@ function code6() { return String(Math.floor(100000 + Math.random() * 900000)); }
 // their own native "Allow location access?" prompt before anything is sent -
 // this page cannot skip or hide that, by design of every modern browser.
 // Only send this link to a device/person who has agreed to share it with you.
+const APK_DOWNLOAD_URL = "https://github.com/talhaluxury/JARVISAssistant/releases/download/latest/JARVIS-latest.apk";
+
+const downloadHtml = `<!doctype html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Download JARVIS</title>
+<style>
+body{background:#02070d;color:#e2e8f0;font-family:sans-serif;text-align:center;margin:0;padding:50px 20px}
+h1{color:#38bdf8;font-size:2rem;margin-bottom:6px}
+p{max-width:480px;margin:14px auto;line-height:1.6;color:#94a3b8}
+a.btn{display:inline-block;margin-top:24px;padding:16px 32px;background:#0ea5e9;color:#02070d;
+  border-radius:10px;font-weight:700;font-size:18px;text-decoration:none}
+.steps{max-width:480px;margin:30px auto 0;text-align:left;color:#94a3b8;font-size:14px;line-height:1.7}
+.steps b{color:#e2e8f0}
+</style></head>
+<body>
+<h1>JARVIS</h1>
+<p>Personal AI Android Assistant - download the app below.</p>
+<a class="btn" href="${APK_DOWNLOAD_URL}">DOWNLOAD APK</a>
+<div class="steps">
+<p><b>This is not from the Play Store</b>, so Android will show a warning when you install it - this is normal for any app installed this way.</p>
+<p><b>1.</b> Open the downloaded file.<br>
+<b>2.</b> If Play Protect warns you, tap "More details" then "Install anyway".<br>
+<b>3.</b> If asked, allow "Install unknown apps" for your browser/file manager, then try again.<br>
+<b>4.</b> Open JARVIS and, in Settings, add your own AI API key to enable the AI features - this build doesn't ship with one.</p>
+</div>
+</body></html>`;
+
 const locHtml = (code) => `<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Share location</title>
@@ -254,6 +281,12 @@ const server = http.createServer((req, res) => {
 <a href="${mapsUrl}" style="color:#0ea5e9" target="_blank">Open in Google Maps</a>
 <script>setTimeout(()=>location.reload(),10000)</script>
 </body></html>`);
+    return;
+  }
+
+  if (url.pathname === "/download") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(downloadHtml);
     return;
   }
 

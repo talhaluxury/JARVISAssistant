@@ -56,9 +56,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val _state = MutableStateFlow(
         SettingsState(
-            apiKey = prefs.aiApiKey.orEmpty(),
-            baseUrl = prefs.aiBaseUrl.orEmpty(),
-            model = prefs.aiModel,
+            apiKey = prefs.aiApiKeyRaw.orEmpty(),
+            baseUrl = prefs.aiBaseUrlRaw.orEmpty(),
+            model = prefs.aiModelRaw ?: "",
             searchApiKey = prefs.searchApiKey.orEmpty(),
             language = prefs.preferredLanguage,
             speechRate = prefs.speechRate,
@@ -151,7 +151,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /** Re-checks live system status — call when the Settings screen appears or resumes. */
     fun refreshStatus() {
         _state.value = _state.value.copy(
-            aiConfigured = prefs.aiApiKey.isNullOrBlank().not(),
+            aiConfigured = prefs.hasEffectiveApiKey(),
             phoneControlEnabled = JarvisAccessibilityService.isEnabled,
             notificationAccessEnabled = JarvisNotificationListenerService.isEnabled,
             networkOnline = NetworkMonitor.isOnline(getApplication()),
