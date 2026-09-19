@@ -129,6 +129,35 @@ class SecurePrefs(context: Context) {
         get() = prefs.getInt(KEY_AUDIT_RETENTION_DAYS, 30)
         set(value) = prefs.edit().putInt(KEY_AUDIT_RETENTION_DAYS, value.coerceIn(1, 3650)).apply()
 
+    /** Raw JSON blob for the forex trading module's settings (demo/live mode, watchlist, risk
+     * limits) — see com.jarvis.assistant.data.local.prefs.TradingSettingsPersistence for the
+     * (de)serialization. Stored as one opaque string rather than one key per field so adding a
+     * new trading setting later never requires a SecurePrefs migration. Null until the trading
+     * module has saved something at least once, in which case callers fall back to defaults. */
+    var tradingSettingsJson: String?
+        get() = prefs.getString(KEY_TRADING_SETTINGS_JSON, null)
+        set(value) = prefs.edit().putString(KEY_TRADING_SETTINGS_JSON, value).apply()
+
+    /** OANDA v20 API credentials for the (Phase 9) live/practice forex broker adapter. Entered
+     * once in Trading Settings, never bundled in the APK — same Keystore-backed storage as the
+     * AI API key above. Null/blank means no broker is connected yet. */
+    var oandaApiKey: String?
+        get() = prefs.getString(KEY_OANDA_API_KEY, null)
+        set(value) = prefs.edit().putString(KEY_OANDA_API_KEY, value).apply()
+
+    var oandaAccountId: String?
+        get() = prefs.getString(KEY_OANDA_ACCOUNT_ID, null)
+        set(value) = prefs.edit().putString(KEY_OANDA_ACCOUNT_ID, value).apply()
+
+    /** True = OANDA's fxPractice (paper) environment, false = real-money fxTrade. Defaults to
+     * practice — same "fail toward the safe default" reasoning as everything else in the
+     * trading module defaulting to demo/paper. */
+    var oandaUsePracticeEnvironment: Boolean
+        get() = prefs.getBoolean(KEY_OANDA_PRACTICE_ENV, true)
+        set(value) = prefs.edit().putBoolean(KEY_OANDA_PRACTICE_ENV, value).apply()
+
+    fun hasOandaCredentials(): Boolean = !oandaApiKey.isNullOrBlank() && !oandaAccountId.isNullOrBlank()
+
     companion object {
         private const val KEY_AI_API_KEY = "ai_api_key"
         private const val KEY_AI_BASE_URL = "ai_base_url"
@@ -148,5 +177,9 @@ class SecurePrefs(context: Context) {
         private const val KEY_DEVELOPER_SIMULATION = "developer_simulation_enabled"
         private const val KEY_SAFE_MODE = "safe_mode_enabled"
         private const val KEY_AUDIT_RETENTION_DAYS = "audit_retention_days"
+        private const val KEY_TRADING_SETTINGS_JSON = "trading_settings_json"
+        private const val KEY_OANDA_API_KEY = "oanda_api_key"
+        private const val KEY_OANDA_ACCOUNT_ID = "oanda_account_id"
+        private const val KEY_OANDA_PRACTICE_ENV = "oanda_practice_environment"
     }
 }

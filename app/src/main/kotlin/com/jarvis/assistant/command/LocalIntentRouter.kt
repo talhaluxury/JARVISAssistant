@@ -20,6 +20,24 @@ object LocalIntentRouter {
         val text = normalize(rawText)
         if (text.isBlank()) return null
 
+        // Forex trading brain commands — checked FIRST and with specific multi-word phrasing so
+        // a bare "stop" or "pause" elsewhere never accidentally halts/pauses real trading state,
+        // and so a plain "yes"/"no" is never mistaken for a forex command (that's handled by
+        // parseConfirmation + whatever tracks a pending RequestForexTrade, not here).
+        if (containsAny(text, FOREX_EMERGENCY_STOP_WORDS)) return JarvisCommand.ForexEmergencyStop
+        if (containsAny(text, FOREX_PAUSE_TRADING_WORDS)) return JarvisCommand.PauseForexTrading
+        if (containsAny(text, FOREX_RESUME_TRADING_WORDS)) return JarvisCommand.ResumeForexTrading
+        if (containsAny(text, FOREX_ENABLE_LIVE_WORDS)) return JarvisCommand.EnableLiveForexTrading
+        if (containsAny(text, FOREX_DISABLE_LIVE_WORDS)) return JarvisCommand.DisableLiveForexTrading
+        if (containsAny(text, FOREX_ENABLE_DEMO_WORDS)) return JarvisCommand.EnableDemoForexTrading
+        if (containsAny(text, FOREX_SCAN_MARKET_WORDS)) return JarvisCommand.ScanForexMarket
+        if (containsAny(text, FOREX_SHOW_TRADES_WORDS)) return JarvisCommand.ShowOpenForexTrades
+        if (containsAny(text, FOREX_SHOW_RISK_WORDS)) return JarvisCommand.ShowForexRiskStatus
+        if (containsAny(text, FOREX_WHY_NO_TRADE_WORDS)) return JarvisCommand.WhyNoForexTrade
+        if (containsAny(text, FOREX_PERFORMANCE_WORDS)) return JarvisCommand.ShowForexPerformance
+        extractForexAnalyze(text)?.let { return it }
+        extractForexTrade(text)?.let { return it }
+
         if (containsAny(text, STOP_WORDS)) return JarvisCommand.StopAction
 
         if (containsAny(text, DIAGNOSTIC_WORDS)) return JarvisCommand.RunDiagnostic
@@ -81,6 +99,46 @@ object LocalIntentRouter {
             val match = pattern.find(text) ?: continue
             val query = match.groupValues.getOrNull(1)?.trim().orEmpty()
             if (query.isNotBlank()) return query
+        }
+        return null
+    }
+
+    /** "analyze eurusd" / "analyze gbpusd on 15 minutes" / "eurusd analyze karo". Returns null
+     * (falling through to other matching) unless a recognized pair symbol is present — an
+     * "analyze" with no known pair shouldn't silently become a no-op forex command. */
+    private fun extractForexAnalyze(text: String): JarvisCommand.AnalyzeForexPair? {
+        val after = when {
+            text.contains("analyze ") -> text.substringAfter("analyze ").trim()
+            text.endsWith("analyze karo") -> text.removeSuffix("analyze karo").trim()
+            else -> return null
+        }
+        if (after.isBlank()) return null
+        val onIndex = after.indexOf(" on ")
+        val pairPart = if (onIndex >= 0) after.substring(0, onIndex) else after
+        val timeframePart = if (onIndex >= 0) after.substring(onIndex + 4).trim() else null
+        val pairSymbol = extractForexPairSymbol(pairPart) ?: return null
+        return JarvisCommand.AnalyzeForexPair(pairSymbol, timeframePart?.takeIf { it.isNotBlank() })
+    }
+
+    /** "buy eurusd" / "sell gbpusd" / "trade xauusd" / "eurusd buy karo". Only matches when a
+     * known pair symbol is present, for the same reason as [extractForexAnalyze]. */
+    private fun extractForexTrade(text: String): JarvisCommand.RequestForexTrade? {
+        val pairSymbol = extractForexPairSymbol(text) ?: return null
+        val direction = when {
+            containsAny(text, listOf("buy")) -> "BUY"
+            containsAny(text, listOf("sell")) -> "SELL"
+            else -> null
+        }
+        // Require an explicit trade verb (buy/sell/trade) so a bare pair mention inside some
+        // other sentence never accidentally proposes a trade.
+        if (direction == null && !containsAny(text, listOf("trade", "check for a setup"))) return null
+        return JarvisCommand.RequestForexTrade(pairSymbol, direction)
+    }
+
+    private fun extractForexPairSymbol(text: String): String? {
+        val compact = text.trim()
+        for ((alias, symbol) in FOREX_PAIR_ALIASES) {
+            if (compact.contains(alias)) return symbol
         }
         return null
     }
@@ -177,6 +235,45 @@ object LocalIntentRouter {
 
     private val NO_WORDS = listOf(
         "nahi", "nahin", "no", "nope", "cancel", "mat karo", "rehne do"
+    )
+
+    // --- forex trading word lists — deliberately multi-word/specific, see match() comment ---
+
+    private val FOREX_EMERGENCY_STOP_WORDS = listOf(
+        "emergency stop", "stop all trading", "jarvis stop all trading", "forex emergency stop", "trading emergency stop"
+    )
+    private val FOREX_PAUSE_TRADING_WORDS = listOf("pause trading", "pause forex trading", "trading pause karo")
+    private val FOREX_RESUME_TRADING_WORDS = listOf("resume trading", "resume forex trading", "trading resume karo", "unpause trading")
+    private val FOREX_ENABLE_LIVE_WORDS = listOf(
+        "enable live trading", "activate live trading", "live trading on karo", "turn on live trading"
+    )
+    private val FOREX_DISABLE_LIVE_WORDS = listOf(
+        "disable live trading", "turn off live trading", "live trading off karo", "stop live trading"
+    )
+    private val FOREX_ENABLE_DEMO_WORDS = listOf(
+        "enable demo trading", "activate demo trading", "demo trading on karo", "turn on demo trading"
+    )
+    private val FOREX_SCAN_MARKET_WORDS = listOf("scan forex market", "scan forex", "scan the market", "forex scan karo")
+    private val FOREX_SHOW_TRADES_WORDS = listOf(
+        "show my open trades", "show open trades", "open positions dikhao", "meri open trades dikhao", "show open positions"
+    )
+    private val FOREX_SHOW_RISK_WORDS = listOf(
+        "calculate risk", "show today's risk", "show my risk", "risk dikhao", "aaj ka risk dikhao", "todays risk"
+    )
+    private val FOREX_WHY_NO_TRADE_WORDS = listOf("why no trade", "trade kyun nahi hua", "no trade kyun", "why didn't you trade")
+    private val FOREX_PERFORMANCE_WORDS = listOf(
+        "show forex performance", "trading performance dikhao", "how is my trading doing", "show trading stats"
+    )
+
+    private val FOREX_PAIR_ALIASES = linkedMapOf(
+        "eurusd" to "EURUSD", "eur usd" to "EURUSD",
+        "gbpusd" to "GBPUSD", "gbp usd" to "GBPUSD",
+        "usdjpy" to "USDJPY", "usd jpy" to "USDJPY",
+        "usdchf" to "USDCHF", "usd chf" to "USDCHF",
+        "audusd" to "AUDUSD", "aud usd" to "AUDUSD",
+        "usdcad" to "USDCAD", "usd cad" to "USDCAD",
+        "nzdusd" to "NZDUSD", "nzd usd" to "NZDUSD",
+        "xauusd" to "XAUUSD", "gold" to "XAUUSD"
     )
 
     // Captures free text after a "search X" / "X search karo" style phrase.

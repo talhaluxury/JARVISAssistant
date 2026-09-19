@@ -122,6 +122,74 @@ sealed class JarvisCommand {
      * and JARVIS says so plainly rather than claiming the app was actually closed. */
     object CloseCurrentApp : JarvisCommand()
 
+    // ---------------------------------------------------------------------------------
+    // Forex trading brain commands: local-only, operate on the trading engines in
+    // com.jarvis.assistant.trading, never touch AndroidActionExecutor. Handled by
+    // ForexBrainCommandExecutor, intercepted the same way other brain commands are.
+    // Pair symbols travel as plain strings (e.g. "EURUSD"), not the trading package's
+    // CurrencyPair enum, so this command layer stays decoupled from trading internals —
+    // ForexBrainCommandExecutor is the only place that parses/validates the symbol.
+    // ---------------------------------------------------------------------------------
+
+    /** "Jarvis, scan forex market" — runs the configured watchlist through the signal engine. */
+    object ScanForexMarket : JarvisCommand()
+
+    /** "Jarvis, analyze EURUSD" / "Jarvis, analyze GBPUSD on 15 minutes". */
+    data class AnalyzeForexPair(val pairSymbol: String, val timeframeLabel: String? = null) : JarvisCommand()
+
+    /** "Jarvis, show my open trades". */
+    object ShowOpenForexTrades : JarvisCommand()
+
+    /** "Jarvis, calculate risk" / "Jarvis, show today's risk". */
+    object ShowForexRiskStatus : JarvisCommand()
+
+    /** "Jarvis, why no trade?" — explains the most recent NO_TRADE/WAIT decision. */
+    object WhyNoForexTrade : JarvisCommand()
+
+    /** "Jarvis, show forex performance" — trade journal analytics. */
+    object ShowForexPerformance : JarvisCommand()
+
+    /**
+     * "Jarvis, buy EURUSD" / "Jarvis, sell EURUSD" / "Jarvis, trade EURUSD". This does NOT place
+     * an order by itself — per spec §17 ("Voice Safety"), the executor runs analysis and speaks
+     * back the full setup (entry/stop/target/risk) as a question, then waits for a plain
+     * [ConfirmForexTradeExecution] before anything is submitted. [requestedDirection] carries
+     * "BUY"/"SELL" only if the user said one explicitly; the executor still defers to whatever
+     * the signal engine actually found rather than forcing the user's requested direction.
+     */
+    data class RequestForexTrade(val pairSymbol: String, val requestedDirection: String? = null) : JarvisCommand()
+
+    /** Second half of a confirmed [RequestForexTrade] — mirrors [SendPendingMessage]'s pattern.
+     * Never issued directly by the AI/router; only fired after the user says yes to the pending
+     * trade question the executor spoke. Whatever layer tracks "there is a pending forex trade
+     * confirmation outstanding" is responsible for turning a plain yes into this command. */
+    object ConfirmForexTradeExecution : JarvisCommand()
+
+    /** The "no" / cancel half of a pending [RequestForexTrade] confirmation. */
+    object CancelPendingForexTrade : JarvisCommand()
+
+    /** "Jarvis, enable demo trading" — always safe, no real money at risk (spec §28). */
+    object EnableDemoForexTrading : JarvisCommand()
+
+    /** "Jarvis, enable live trading." Per spec §16/§36 this is the one forex command that DOES
+     * require a real confirmation — see [requiresConfirmation] and [describe]'s exact warning. */
+    object EnableLiveForexTrading : JarvisCommand()
+
+    /** "Jarvis, disable live trading." Turning risk OFF is always frictionless — never gated. */
+    object DisableLiveForexTrading : JarvisCommand()
+
+    /** "Jarvis, pause trading." Deliberately its own phrase set (not the generic pause/stop
+     * words) so a plain "stop"/"pause" elsewhere in a sentence never silently halts trading. */
+    object PauseForexTrading : JarvisCommand()
+
+    /** "Jarvis, emergency stop" / "Jarvis, stop all trading." Spec §18/§20: must be instant,
+     * never gated behind a confirmation prompt of its own. */
+    object ForexEmergencyStop : JarvisCommand()
+
+    /** "Jarvis, resume trading" — clears a pause or emergency stop. Only the user can do this
+     * (spec §20), so it's never issued automatically by any engine. */
+    object ResumeForexTrading : JarvisCommand()
+
     // HUD-only commands are local, fast and do not require AI/network access.
     object ActivateHud : JarvisCommand()
     object StandbyHud : JarvisCommand()
@@ -140,7 +208,15 @@ sealed class JarvisCommand {
 fun JarvisCommand.isBrainOnly(): Boolean = this is JarvisCommand.RunDiagnostic ||
     this is JarvisCommand.MemoryQuery || this is JarvisCommand.ForgetMemory ||
     this is JarvisCommand.PauseTask || this is JarvisCommand.ResumeTask ||
-    this is JarvisCommand.RetryLastTask || this is JarvisCommand.ShowLearningStats
+    this is JarvisCommand.RetryLastTask || this is JarvisCommand.ShowLearningStats ||
+    this is JarvisCommand.ScanForexMarket || this is JarvisCommand.AnalyzeForexPair ||
+    this is JarvisCommand.ShowOpenForexTrades || this is JarvisCommand.ShowForexRiskStatus ||
+    this is JarvisCommand.WhyNoForexTrade || this is JarvisCommand.ShowForexPerformance ||
+    this is JarvisCommand.RequestForexTrade || this is JarvisCommand.ConfirmForexTradeExecution ||
+    this is JarvisCommand.CancelPendingForexTrade || this is JarvisCommand.EnableDemoForexTrading ||
+    this is JarvisCommand.EnableLiveForexTrading || this is JarvisCommand.DisableLiveForexTrading ||
+    this is JarvisCommand.PauseForexTrading || this is JarvisCommand.ForexEmergencyStop ||
+    this is JarvisCommand.ResumeForexTrading
 
 /** Whether a command needs an explicit "yes, do it" from the user before executing. */
 fun JarvisCommand.requiresConfirmation(): Boolean = when (this) {
@@ -191,7 +267,27 @@ fun JarvisCommand.requiresConfirmation(): Boolean = when (this) {
     JarvisCommand.RetryLastTask,
     JarvisCommand.ShowLearningStats,
     JarvisCommand.ListInstalledApps,
-    JarvisCommand.CloseCurrentApp -> false
+    JarvisCommand.CloseCurrentApp,
+    // Read-only / informational forex commands never block on confirmation.
+    JarvisCommand.ScanForexMarket,
+    is JarvisCommand.AnalyzeForexPair,
+    JarvisCommand.ShowOpenForexTrades,
+    JarvisCommand.ShowForexRiskStatus,
+    JarvisCommand.WhyNoForexTrade,
+    JarvisCommand.ShowForexPerformance,
+    // RequestForexTrade never places an order itself — the executor asks its own explicit
+    // trade-confirmation question and waits for ConfirmForexTradeExecution/CancelPendingForexTrade.
+    is JarvisCommand.RequestForexTrade,
+    JarvisCommand.ConfirmForexTradeExecution,
+    JarvisCommand.CancelPendingForexTrade,
+    // Demo mode risks nothing real (spec §28) — enabling it is always frictionless.
+    JarvisCommand.EnableDemoForexTrading,
+    // Turning risk OFF must never be gated.
+    JarvisCommand.DisableLiveForexTrading,
+    JarvisCommand.PauseForexTrading,
+    // Emergency stop must be instant — spec §18/§20 explicitly forbid gating this on anything.
+    JarvisCommand.ForexEmergencyStop,
+    JarvisCommand.ResumeForexTrading -> false
     is JarvisCommand.OpenDialer,
     is JarvisCommand.SetAlarm,
     is JarvisCommand.SetTimer,
@@ -202,7 +298,10 @@ fun JarvisCommand.requiresConfirmation(): Boolean = when (this) {
     // Deleting stored memory is irreversible, same tier as sending a message.
     is JarvisCommand.ForgetMemory,
     // Sending a message is the one automation step that always needs a real "yes" first.
-    is JarvisCommand.SendWhatsAppMessage -> true
+    is JarvisCommand.SendWhatsAppMessage,
+    // Spec §16/§36: enabling live (real-money) execution always requires an explicit, real
+    // confirmation — see this command's exact warning text in describe().
+    JarvisCommand.EnableLiveForexTrading -> true
 }
 
 fun JarvisCommand.describe(): String = when (this) {
@@ -259,4 +358,21 @@ fun JarvisCommand.describe(): String = when (this) {
     JarvisCommand.FullHud -> "Full HUD activated."
     JarvisCommand.MinimalHud -> "Minimal HUD activated."
     JarvisCommand.PowerSavingHud -> "Power-saving HUD activated."
+    JarvisCommand.ScanForexMarket -> "Scanning the forex watchlist."
+    is JarvisCommand.AnalyzeForexPair -> "Analyzing $pairSymbol${timeframeLabel?.let { " on $it" } ?: ""}."
+    JarvisCommand.ShowOpenForexTrades -> "Showing open forex positions."
+    JarvisCommand.ShowForexRiskStatus -> "Showing today's forex risk status."
+    JarvisCommand.WhyNoForexTrade -> "Explaining the most recent no-trade decision."
+    JarvisCommand.ShowForexPerformance -> "Showing forex trading performance."
+    is JarvisCommand.RequestForexTrade -> "Checking $pairSymbol for a trade setup."
+    JarvisCommand.ConfirmForexTradeExecution -> "Confirmed — submitting the trade."
+    JarvisCommand.CancelPendingForexTrade -> "Trade cancelled."
+    JarvisCommand.EnableDemoForexTrading -> "Demo forex trading enabled."
+    // Spec §16's exact example wording — this is the confirmation prompt itself.
+    JarvisCommand.EnableLiveForexTrading ->
+        "Live trading is currently disabled. Enabling live execution can result in financial loss. Do you want to enable live trading?"
+    JarvisCommand.DisableLiveForexTrading -> "Live forex trading disabled. Demo mode active."
+    JarvisCommand.PauseForexTrading -> "Forex trading paused."
+    JarvisCommand.ForexEmergencyStop -> "Emergency stop activated. All forex trading halted immediately."
+    JarvisCommand.ResumeForexTrading -> "Forex trading resumed."
 }
