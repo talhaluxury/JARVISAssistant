@@ -61,6 +61,22 @@ object CommandCodec {
         JarvisCommand.FullHud -> JSONObject().put("type", "FULL_HUD")
         JarvisCommand.MinimalHud -> JSONObject().put("type", "MINIMAL_HUD")
         JarvisCommand.PowerSavingHud -> JSONObject().put("type", "POWER_SAVING_HUD")
+        // Forex commands are deliberately NOT encodable into a saved/replayable workflow. A
+        // trade proposal or confirmation depends on live, ephemeral state (the pending signal
+        // held in ForexBrainCommandExecutor) that has no meaningful representation as a static
+        // JSON step, and — more importantly — a saved workflow is exactly the kind of unattended,
+        // repeatable automation spec §17's "Voice Safety" exists to prevent trades from ever
+        // going through. If this is ever hit, something upstream (WorkflowValidator) should have
+        // rejected the command before it reached here.
+        JarvisCommand.ScanForexMarket, is JarvisCommand.AnalyzeForexPair,
+        JarvisCommand.ShowOpenForexTrades, JarvisCommand.ShowForexRiskStatus,
+        JarvisCommand.WhyNoForexTrade, JarvisCommand.ShowForexPerformance,
+        is JarvisCommand.RequestForexTrade, JarvisCommand.ConfirmForexTradeExecution,
+        JarvisCommand.CancelPendingForexTrade, JarvisCommand.EnableDemoForexTrading,
+        JarvisCommand.EnableLiveForexTrading, JarvisCommand.DisableLiveForexTrading,
+        JarvisCommand.PauseForexTrading, JarvisCommand.ForexEmergencyStop,
+        JarvisCommand.ResumeForexTrading ->
+            throw UnsupportedOperationException("Forex commands cannot be saved into a workflow: ${command::class.simpleName}")
     }
 
     fun decode(json: JSONObject): JarvisCommand? = CommandEngine.parse(json.toString())

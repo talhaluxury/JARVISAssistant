@@ -81,7 +81,13 @@ class DemoBrokerAdapter(
 
     override val mode = TradingMode.DEMO
 
-    private var connected = false
+    // Defaults to true: a local synthetic simulator has nothing to actually connect to, and
+    // requiring every caller to remember an explicit connect() before first use is exactly the
+    // kind of silent-dead-on-arrival trap that's easy to miss in DI wiring (every operation
+    // below would otherwise quietly return null/empty forever if that call were ever skipped).
+    // connect()/isConnected() remain as a real (if trivial) implementation of the interface for
+    // adapters that DO need a handshake, like OandaBrokerAdapter.
+    private var connected = true
     private var balance = startingBalance
     private val openOrders = mutableMapOf<String, OrderRequest>()
     private val random = Random(seed = 42)

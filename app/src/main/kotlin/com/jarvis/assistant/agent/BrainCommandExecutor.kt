@@ -2,16 +2,24 @@ package com.jarvis.assistant.agent
 
 import com.jarvis.assistant.command.JarvisCommand
 import com.jarvis.assistant.data.repository.MemoryRepository
+import com.jarvis.assistant.trading.ForexBrainCommandExecutor
 
 /**
  * Local, offline "brain" commands: self-diagnostic, memory recall/forget, and learning stats.
  * Like HudCommandExecutor, these never touch AndroidActionExecutor and never need network.
  * Returns null for anything it doesn't own, so the caller falls through to the normal executor.
+ *
+ * Forex voice commands (see com.jarvis.assistant.trading.JarvisCommand additions) are delegated
+ * to [forexBrainCommandExecutor] rather than handled inline here, since they need the whole
+ * trading engine dependency graph (market data, signal/risk engines, journal, settings) rather
+ * than this class's own three dependencies — composing a second brain executor keeps that graph
+ * out of this file entirely while still presenting one BrainCommandExecutor to the rest of the app.
  */
 class BrainCommandExecutor(
     private val diagnosticEngine: DiagnosticEngine,
     private val memoryRepository: MemoryRepository,
-    private val learningEngine: LearningEngine
+    private val learningEngine: LearningEngine,
+    private val forexBrainCommandExecutor: ForexBrainCommandExecutor
 ) {
     suspend fun execute(command: JarvisCommand): String? = when (command) {
         JarvisCommand.RunDiagnostic -> diagnosticEngine.run().toReportText()
@@ -51,6 +59,15 @@ class BrainCommandExecutor(
                 }
             }.trim()
         }
+
+        JarvisCommand.ScanForexMarket, is JarvisCommand.AnalyzeForexPair,
+        JarvisCommand.ShowOpenForexTrades, JarvisCommand.ShowForexRiskStatus,
+        JarvisCommand.WhyNoForexTrade, JarvisCommand.ShowForexPerformance,
+        is JarvisCommand.RequestForexTrade, JarvisCommand.ConfirmForexTradeExecution,
+        JarvisCommand.CancelPendingForexTrade, JarvisCommand.EnableDemoForexTrading,
+        JarvisCommand.EnableLiveForexTrading, JarvisCommand.DisableLiveForexTrading,
+        JarvisCommand.PauseForexTrading, JarvisCommand.ForexEmergencyStop,
+        JarvisCommand.ResumeForexTrading -> forexBrainCommandExecutor.execute(command)
 
         else -> null
     }

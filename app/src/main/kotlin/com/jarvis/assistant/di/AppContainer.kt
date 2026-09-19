@@ -48,6 +48,19 @@ import com.jarvis.assistant.core.mission.MissionManager
 import com.jarvis.assistant.core.workflow.WorkflowValidator
 import com.jarvis.assistant.core.observability.AuditLog
 import com.jarvis.assistant.core.recovery.RecoveryPolicy
+import com.jarvis.assistant.data.local.prefs.createPersistentTradingSettingsStore
+import com.jarvis.assistant.trading.BrokerAdapter
+import com.jarvis.assistant.trading.DemoBrokerAdapter
+import com.jarvis.assistant.trading.EmergencyStopController
+import com.jarvis.assistant.trading.ForexBrainCommandExecutor
+import com.jarvis.assistant.trading.InMemoryTradeJournal
+import com.jarvis.assistant.trading.MarketDataService
+import com.jarvis.assistant.trading.MarketStructureEngine
+import com.jarvis.assistant.trading.MultiTimeframeEngine
+import com.jarvis.assistant.trading.PaperTradingEngine
+import com.jarvis.assistant.trading.RiskManagementEngine
+import com.jarvis.assistant.trading.SignalConfidenceEngine
+import com.jarvis.assistant.trading.TradeJournal
 
 /**
  * Simple hand-written dependency container. Keeping this manual (instead of
@@ -133,5 +146,31 @@ class AppContainer(context: Context) {
     val knowledgeBase = KnowledgeBase(knowledgeRepository)
 
     val diagnosticEngine = DiagnosticEngine(context, securePrefs, capabilityRegistry, speechToTextManager, brainRepository, knowledgeBase)
-    val brainCommandExecutor = BrainCommandExecutor(diagnosticEngine, memoryRepository, learningEngine)
+
+    // Forex trading module (see com.jarvis.assistant.trading). Wired to DemoBrokerAdapter by
+    // default — a real broker (OandaBrokerAdapter today) is a drop-in replacement for
+    // forexBroker once verified against a real account (see docs/OANDA_INTEGRATION_CHECKLIST.md);
+    // nothing else on this list needs to change to swap it, that's the whole point of
+    // BrokerAdapter being an interface.
+    val forexBroker: BrokerAdapter = DemoBrokerAdapter()
+    val forexMarketDataService = MarketDataService(forexBroker)
+    val forexStructureEngine = MarketStructureEngine()
+    val forexMultiTimeframeEngine = MultiTimeframeEngine(forexMarketDataService, forexStructureEngine)
+    val forexSignalEngine = SignalConfidenceEngine()
+    val forexRiskEngine = RiskManagementEngine()
+    // In-memory only for now — every trade/signal decision is lost on process death. Swapping
+    // in a Room-backed TradeJournal implementation is a follow-up, not done here, since it needs
+    // its own migration/schema thought rather than being rushed in alongside this wiring.
+    val forexTradeJournal: TradeJournal = InMemoryTradeJournal()
+    val forexTradingSettingsStore = createPersistentTradingSettingsStore(securePrefs)
+    val forexEmergencyStop = EmergencyStopController { forexTradingSettingsStore.current().risk }
+    val paperTradingEngine = PaperTradingEngine(
+        forexMarketDataService, forexMultiTimeframeEngine, forexSignalEngine, forexRiskEngine,
+        forexBroker, forexTradeJournal, forexEmergencyStop
+    )
+    val forexBrainCommandExecutor = ForexBrainCommandExecutor(
+        forexTradingSettingsStore, paperTradingEngine, forexTradeJournal, forexEmergencyStop, forexBroker
+    )
+
+    val brainCommandExecutor = BrainCommandExecutor(diagnosticEngine, memoryRepository, learningEngine, forexBrainCommandExecutor)
 }

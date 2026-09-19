@@ -138,7 +138,7 @@ class SignalConfidenceEngine {
 
         val criticalFailure = checks.firstOrNull { it.check.critical && it.check.result == CheckResult.FAIL }
         val confidence = score(checks)
-        val rr = levels?.let { (l) -> abs(l.third - l.first) / abs(l.first - l.second) }
+        val rr = levels?.let { triple -> abs(triple.third - triple.first) / abs(triple.first - triple.second) }
 
         if (criticalFailure != null) {
             return TradeSignal(

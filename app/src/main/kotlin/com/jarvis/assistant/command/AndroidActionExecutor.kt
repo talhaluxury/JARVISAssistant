@@ -97,7 +97,18 @@ class AndroidActionExecutor(private val context: Context, private val securePref
             JarvisCommand.ShowNetwork, JarvisCommand.ShowNotificationsHud, JarvisCommand.ShowSystemStatus,
             JarvisCommand.RunDiagnostic, JarvisCommand.MemoryQuery, is JarvisCommand.ForgetMemory,
             JarvisCommand.PauseTask, JarvisCommand.ResumeTask, JarvisCommand.RetryLastTask,
-            JarvisCommand.ShowLearningStats ->
+            JarvisCommand.ShowLearningStats,
+            // Forex commands are brain-only (see JarvisCommand.isBrainOnly()) and are always
+            // intercepted before reaching this executor — this branch is a defensive fallback,
+            // matching the existing pattern for the other brain-only commands just above.
+            JarvisCommand.ScanForexMarket, is JarvisCommand.AnalyzeForexPair,
+            JarvisCommand.ShowOpenForexTrades, JarvisCommand.ShowForexRiskStatus,
+            JarvisCommand.WhyNoForexTrade, JarvisCommand.ShowForexPerformance,
+            is JarvisCommand.RequestForexTrade, JarvisCommand.ConfirmForexTradeExecution,
+            JarvisCommand.CancelPendingForexTrade, JarvisCommand.EnableDemoForexTrading,
+            JarvisCommand.EnableLiveForexTrading, JarvisCommand.DisableLiveForexTrading,
+            JarvisCommand.PauseForexTrading, JarvisCommand.ForexEmergencyStop,
+            JarvisCommand.ResumeForexTrading ->
                 ExecutionResult.Success(command.describe())
         }
     } catch (e: ActivityNotFoundException) {
