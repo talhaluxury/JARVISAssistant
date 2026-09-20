@@ -89,8 +89,12 @@ fun AccessibilitySetupScreen(
 private fun openJarvisAccessibilitySettings(context: Context) {
     val component = ComponentName(context, JarvisAccessibilityService::class.java)
     val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        Intent(Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS).apply {
-            putExtra(Settings.EXTRA_ACCESSIBILITY_COMPONENT_NAME, component.flattenToString())
+        // Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS / EXTRA_ACCESSIBILITY_COMPONENT_NAME
+        // deep-link straight to this one service's toggle, but aren't part of the public
+        // Android SDK (no compileSdk resolves them, even on 34/35) - only the underlying
+        // platform action/extra strings are documented, so those are used directly here.
+        Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS").apply {
+            putExtra("android.provider.extra.ACCESSIBILITY_COMPONENT_NAME", component.flattenToString())
         }
     } else {
         Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
