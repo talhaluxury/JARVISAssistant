@@ -61,6 +61,7 @@ import com.jarvis.assistant.trading.PaperTradingEngine
 import com.jarvis.assistant.trading.RiskManagementEngine
 import com.jarvis.assistant.trading.SignalConfidenceEngine
 import com.jarvis.assistant.trading.TradeJournal
+import com.jarvis.assistant.wingo.WinGoModule
 
 /**
  * Simple hand-written dependency container. Keeping this manual (instead of
@@ -173,4 +174,7 @@ class AppContainer(context: Context) {
     )
 
     val brainCommandExecutor = BrainCommandExecutor(diagnosticEngine, memoryRepository, learningEngine, forexBrainCommandExecutor)
+
+    /** WinGo Big/Small analyzer: separate DB, no shared state with the modules above. */
+    val winGo: WinGoModule by lazy { WinGoModule(context) }
 }

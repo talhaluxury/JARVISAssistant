@@ -26,24 +26,3 @@ Run the existing workflow or, with Gradle 8.7 installed:
     gradle assembleDebug
 
 The APK output is `app/build/outputs/apk/debug/app-debug.apk`.
-
-## One-Tap Accessibility Setup (2026-09-20)
-
-Added a first-run JARVIS Phone Control setup screen.
-
-### Behavior
-- On first launch, JARVIS checks whether `JarvisAccessibilityService` is already enabled.
-- If it is not enabled, JARVIS shows **ENABLE JARVIS CONTROL**.
-- On Android 12+ it attempts to open the JARVIS-specific Accessibility details page directly.
-- If the device/OEM Settings app does not support that deep link, it falls back to the main Accessibility settings page.
-- When the user enables JARVIS and returns, the app detects the service automatically and continues to the normal boot sequence.
-- A **CONTINUE WITHOUT PHONE CONTROL** option remains available so the assistant can be used without automation.
-
-### Security boundary
-Android does not permit an ordinary app to silently enable its own AccessibilityService. The setup therefore removes the need to manually search for JARVIS in Settings, while keeping the required human confirmation.
-
-### Files changed
-- `app/src/main/kotlin/com/jarvis/assistant/MainActivity.kt`
-- `app/src/main/kotlin/com/jarvis/assistant/ui/screens/setup/AccessibilitySetupScreen.kt`
-- `app/src/main/AndroidManifest.xml`
-- `app/src/main/res/values/strings.xml`

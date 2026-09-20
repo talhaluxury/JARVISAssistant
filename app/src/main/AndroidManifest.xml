@@ -48,6 +48,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Android 12+ Bluetooth state access when the user grants it. -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- WinGo Analyzer floating HUD (display over other apps) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:name=".JarvisApplication"
@@ -102,7 +104,6 @@
 
         <service
             android:name=".accessibility.JarvisAccessibilityService"
-            android:label="@string/accessibility_service_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>
@@ -117,6 +118,22 @@
             android:name=".remote.RemoteScreenService"
             android:foregroundServiceType="mediaProjection"
             android:exported="false" />
+
+        <!-- WinGo Analyzer: read-only screen capture (user-approved MediaProjection) + floating HUD -->
+        <service
+            android:name=".wingo.capture.WinGoMonitorService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
+
+        <service
+            android:name=".wingo.overlay.WinGoOverlayService"
+            android:exported="false" />
+
+        <activity
+            android:name=".wingo.capture.WinGoCaptureConsentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <service
             android:name=".remote.RemoteConnectService"

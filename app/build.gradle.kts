@@ -37,6 +37,20 @@ android {
         buildConfigField("String", "DEFAULT_REMOTE_RELAY_URL", "\"${remoteRelayUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
     }
 
+    // Optional release signing: only active when RELEASE_KEYSTORE_PATH (+ password/alias props) are passed
+    // in, e.g. from GitHub Actions secrets. Without them release builds stay unsigned; debug is unaffected.
+    val releaseKeystorePath = (project.findProperty("RELEASE_KEYSTORE_PATH") as String?)?.trim()?.takeIf { it.isNotBlank() }
+    signingConfigs {
+        if (releaseKeystorePath != null) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = (project.findProperty("RELEASE_KEYSTORE_PASSWORD") as String?) ?: ""
+                keyAlias = (project.findProperty("RELEASE_KEY_ALIAS") as String?) ?: ""
+                keyPassword = (project.findProperty("RELEASE_KEY_PASSWORD") as String?) ?: ""
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -44,6 +58,7 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (releaseKeystorePath != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -88,6 +103,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
+    // WinGo Analyzer: on-device OCR (bundled Latin model, no network needed)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")

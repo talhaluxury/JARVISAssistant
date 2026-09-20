@@ -1,0 +1,50 @@
+name: WinGo verify (tests + builds)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'app/src/**/wingo/**'
+      - 'app/build.gradle.kts'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Unit tests (WinGo)
+        run: gradle testDebugUnitTest --tests "com.jarvis.assistant.wingo.*"
+      - name: Debug APK
+        run: gradle assembleDebug
+      - name: Release APK + AAB (signed only if keystore secrets exist)
+        env:
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          KS_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            gradle assembleRelease bundleRelease \
+              -PRELEASE_KEYSTORE_PATH="$RUNNER_TEMP/release.jks" \
+              -PRELEASE_KEYSTORE_PASSWORD="$KS_PASSWORD" \
+              -PRELEASE_KEY_ALIAS="$KEY_ALIAS" \
+              -PRELEASE_KEY_PASSWORD="$KEY_PASSWORD"
+          else
+            gradle assembleRelease bundleRelease
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wingo-verify-outputs
+          path: |
+            app/build/outputs/apk/**/*.apk
+            app/build/outputs/bundle/**/*.aab
+            app/build/reports/tests/**

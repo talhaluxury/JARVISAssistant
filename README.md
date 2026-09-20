@@ -233,3 +233,11 @@ The existing JARVIS architecture now also exposes a small, dependency-free core 
 
 These additions are intentionally additive: Android executors, Room repositories, voice, accessibility,
 HUD, wallpaper, AI and the existing command/task pipeline remain in place.
+
+
+## WinGo Analyzer (optional module)
+
+Read-only analysis of the WinGo Big/Small history shown on your own screen: OCR + validation, Room storage,
+7-model ensemble with walk-forward backtesting, floating HUD, chat/voice questions and an offline CSV test mode.
+It never bets or taps, and it reports measured accuracy instead of promising any. See
+[`docs/WINGO_ANALYZER.md`](docs/WINGO_ANALYZER.md).

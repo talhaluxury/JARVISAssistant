@@ -31,9 +31,6 @@ data class SettingsState(
     val baseUrl: String = "",
     val model: String = "gpt-4o-mini",
     val searchApiKey: String = "",
-    val oandaApiKey: String = "",
-    val oandaAccountId: String = "",
-    val oandaUsePractice: Boolean = true,
     val language: String = "auto",
     val speechRate: Float = 1.0f,
     val wakeWordEnabled: Boolean = false,
@@ -63,9 +60,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             baseUrl = prefs.aiBaseUrlRaw.orEmpty(),
             model = prefs.aiModelRaw ?: "",
             searchApiKey = prefs.searchApiKey.orEmpty(),
-            oandaApiKey = prefs.oandaApiKey.orEmpty(),
-            oandaAccountId = prefs.oandaAccountId.orEmpty(),
-            oandaUsePractice = prefs.oandaUsePracticeEnvironment,
             language = prefs.preferredLanguage,
             speechRate = prefs.speechRate,
             wakeWordEnabled = prefs.wakeWordEnabled,
@@ -117,22 +111,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun updateSearchApiKey(value: String) {
         prefs.searchApiKey = value
         _state.value = _state.value.copy(searchApiKey = value)
-    }
-
-    fun updateOandaApiKey(value: String) {
-        prefs.oandaApiKey = value
-        _state.value = _state.value.copy(oandaApiKey = value)
-    }
-
-    fun updateOandaAccountId(value: String) {
-        prefs.oandaAccountId = value
-        _state.value = _state.value.copy(oandaAccountId = value)
-    }
-
-    /** Practice = OANDA's paper-money sandbox (default, safe). Turning this off risks real money. */
-    fun updateOandaUsePractice(usePractice: Boolean) {
-        prefs.oandaUsePracticeEnvironment = usePractice
-        _state.value = _state.value.copy(oandaUsePractice = usePractice)
     }
 
     fun updateLanguage(value: String) {

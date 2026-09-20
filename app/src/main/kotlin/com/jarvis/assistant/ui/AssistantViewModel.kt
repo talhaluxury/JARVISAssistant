@@ -203,6 +203,18 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             // Routing-critical commands (scroll, back, home, search-here, open app, stop, and
             // now the brain commands: diagnostic/memory/pause/resume/retry/stats) never touch
             // the AI — instant, always correct, and work fully offline / without an API key.
+            // WinGo analyzer questions ("analyze game", "show signal" ...) are answered from stored data.
+            // Only claims utterances that clearly concern the game; everything else falls through.
+            container.winGo.voice.tryHandle(text)?.let { winGoReply ->
+                val winGoConversation = ensureConversation(text)
+                container.conversationRepository.addMessage(winGoConversation, "user", text)
+                container.conversationRepository.addMessage(winGoConversation, "assistant", winGoReply)
+                _lastResponse.value = winGoReply
+                _statusText.value = "SYSTEM READY"
+                log("ACTION: WINGO")
+                if (speakReply) speak(winGoReply) else _voiceState.value = VoiceState.IDLE
+                return@launch
+            }
             LocalIntentRouter.match(text)?.let { command ->
                 val conversationId = ensureConversation(text)
                 container.conversationRepository.addMessage(conversationId, "user", text)
