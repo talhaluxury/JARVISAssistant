@@ -37,6 +37,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * When Background JARVIS / Wake Word is enabled in Settings, this service runs a
@@ -216,12 +217,14 @@ class OverlayService : Service() {
                             var depth = 0
                             while (bargedIn && depth < 4) {
                                 bargedIn = false
-                                setState(VoiceState.LISTENING)
-                                var followUp: String? = null
-                                container.speechToTextManager.listen(languageTag = null).collect { event ->
-                                    if (event is SpeechEvent.FinalResult) followUp = event.text
-                                }
-                                val t = followUp?.takeIf { it.isNotBlank() } ?: break
+                                val t = pendingFollowUpText?.also { pendingFollowUpText = null } ?: run {
+                                    setState(VoiceState.LISTENING)
+                                    var followUp: String? = null
+                                    container.speechToTextManager.listen(languageTag = null).collect { event ->
+                                        if (event is SpeechEvent.FinalResult) followUp = event.text
+                                    }
+                                    followUp?.takeIf { it.isNotBlank() }
+                                } ?: break
                                 bargedIn = processCommand(t)
                                 depth++
                             }
@@ -279,15 +282,24 @@ class OverlayService : Service() {
     // -------------------------------------------------------------------------- voice pipeline
 
     private suspend fun runVoiceTurn(depth: Int = 0) {
-        if (depth > 4) return
-        setState(VoiceState.LISTENING)
-        var finalText: String? = null
-        container.speechToTextManager.listen(languageTag = null).collect { event ->
-            if (event is SpeechEvent.FinalResult) finalText = event.text
+        var currentDepth = depth
+        var textToProcess = pendingFollowUpText
+        pendingFollowUpText = null
+        while (currentDepth <= 4) {
+            val text = textToProcess ?: run {
+                setState(VoiceState.LISTENING)
+                var finalText: String? = null
+                container.speechToTextManager.listen(languageTag = null).collect { event ->
+                    if (event is SpeechEvent.FinalResult) finalText = event.text
+                }
+                finalText?.takeIf { it.isNotBlank() }
+            } ?: return
+            val bargedIn = processCommand(text)
+            if (!bargedIn) return
+            textToProcess = pendingFollowUpText
+            pendingFollowUpText = null
+            currentDepth++
         }
-        val text = finalText?.takeIf { it.isNotBlank() } ?: return
-        val bargedIn = processCommand(text)
-        if (bargedIn) runVoiceTurn(depth + 1)
     }
 
     /** Returns true if the user started talking again while JARVIS was replying (barge-in). */
@@ -475,6 +487,22 @@ class OverlayService : Service() {
         }
     }
 
+    /** Set by [speakWithBargeIn] when a natural follow-up utterance was captured right after
+     *  speaking (not a mid-speech interrupt) — the caller should process this text directly
+     *  instead of listening again, so the utterance isn't silently thrown away. */
+    private var pendingFollowUpText: String? = null
+
+    /**
+     * Speaks [text], then keeps the conversation open for a natural follow-up WITHOUT requiring
+     * the wake word again — e.g. "open youtube" followed a moment later by "search relaxing
+     * music" should just work, the way a second sentence in a real conversation would, rather
+     * than forcing "Jarvis" to be said before every single follow-up instruction.
+     *
+     * Returns true if the caller should keep the conversation going (either the user talked
+     * over JARVIS mid-sentence, or spoke again within [FOLLOW_UP_WINDOW_MS] of it finishing —
+     * check [pendingFollowUpText] for that second case, since the words are already captured).
+     * Returns false if there was silence, which cleanly falls back to wake-word-only listening.
+     */
     private suspend fun speakWithBargeIn(text: String): Boolean {
         setState(VoiceState.SPEAKING)
         val prefs = container.securePrefs
@@ -489,7 +517,19 @@ class OverlayService : Service() {
         }
         container.textToSpeechManager.speak(text)
         container.voiceActivityDetector.stop()
-        return interrupted.get()
+
+        if (interrupted.get()) return true
+
+        setState(VoiceState.LISTENING)
+        var followUp: String? = null
+        withTimeoutOrNull(FOLLOW_UP_WINDOW_MS) {
+            container.speechToTextManager.listen(languageTag = null).collect { event ->
+                if (event is SpeechEvent.FinalResult) followUp = event.text
+            }
+        }
+        val heard = followUp?.takeIf { it.isNotBlank() } ?: return false
+        pendingFollowUpText = heard
+        return true
     }
 
     private fun failureGuidance(message: String): String {
@@ -536,5 +576,8 @@ class OverlayService : Service() {
 
         /** Checked case-insensitively against each heard phrase; add more variants if needed. */
         private val WAKE_WORDS = listOf("hey jarvis", "jarvis", "جارویس", "जार्विस", "ہے جارویس")
+        /** How long to keep listening for a natural follow-up after JARVIS finishes speaking,
+         * before giving up and requiring the wake word again. */
+        private const val FOLLOW_UP_WINDOW_MS = 6000L
     }
 }

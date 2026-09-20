@@ -152,6 +152,44 @@ fun SettingsScreen(onOpenDashboard: () -> Unit = {}, onOpenPermissions: () -> Un
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
         )
 
+        SectionLabel("Forex Trading (OANDA)")
+        Text(
+            "Free at oanda.com/demo-account — generate a personal access token under " +
+                "\"Manage API Access\", and copy your account ID from the practice dashboard.",
+            color = JarvisTextSecondary,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        OutlinedTextField(
+            value = state.oandaApiKey,
+            onValueChange = viewModel::updateOandaApiKey,
+            label = { Text("OANDA API token") },
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+        )
+        OutlinedTextField(
+            value = state.oandaAccountId,
+            onValueChange = viewModel::updateOandaAccountId,
+            label = { Text("Account ID (e.g. 001-001-1234567-001)") },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(if (state.oandaUsePractice) "Practice account (paper money, safe)" else "⚠ LIVE account — real money")
+                if (!state.oandaUsePractice) {
+                    Text(
+                        "Only turn this off if you fully understand real trades will be placed.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
+            Switch(checked = state.oandaUsePractice, onCheckedChange = viewModel::updateOandaUsePractice)
+        }
+
         SectionLabel("Voice")
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
