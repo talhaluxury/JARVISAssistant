@@ -102,6 +102,7 @@
 
         <service
             android:name=".accessibility.JarvisAccessibilityService"
+            android:label="@string/accessibility_service_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>

@@ -20,7 +20,9 @@ import androidx.compose.ui.platform.LocalContext
 import com.jarvis.assistant.navigation.JarvisNavGraph
 import com.jarvis.assistant.security.AppLock
 import com.jarvis.assistant.security.AppLockScreen
+import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 import com.jarvis.assistant.ui.screens.boot.BootScreen
+import com.jarvis.assistant.ui.screens.setup.AccessibilitySetupScreen
 import com.jarvis.assistant.ui.theme.JarvisTheme
 
 class MainActivity : ComponentActivity() {
@@ -46,6 +48,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun JarvisApp() {
+    val context = LocalContext.current
     val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     var bootComplete by remember { mutableStateOf(false) }
@@ -57,7 +60,15 @@ private fun JarvisApp() {
         }
     }
 
-    if (bootComplete) {
+    var setupComplete by remember { mutableStateOf(JarvisAccessibilityService.isEnabled) }
+
+    if (!setupComplete) {
+        AccessibilitySetupScreen(
+            context = context,
+            onComplete = { setupComplete = true },
+            onSkip = { setupComplete = true }
+        )
+    } else if (bootComplete) {
         JarvisNavGraph()
     } else {
         BootScreen(onFinished = { bootComplete = true })
