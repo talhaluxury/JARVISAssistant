@@ -61,6 +61,7 @@ import com.jarvis.assistant.trading.PaperTradingEngine
 import com.jarvis.assistant.trading.RiskManagementEngine
 import com.jarvis.assistant.trading.SignalConfidenceEngine
 import com.jarvis.assistant.trading.TradeJournal
+import com.jarvis.assistant.quotex.QuotexModule
 import com.jarvis.assistant.wingo.WinGoModule
 
 /**
@@ -177,4 +178,7 @@ class AppContainer(context: Context) {
 
     /** WinGo Big/Small analyzer: separate DB, no shared state with the modules above. */
     val winGo: WinGoModule by lazy { WinGoModule(context) }
+
+    /** Quotex chart analyzer: analysis only (no order path), separate DB. */
+    val quotex: QuotexModule by lazy { QuotexModule(context) }
 }

@@ -39,6 +39,7 @@ import com.jarvis.assistant.ui.screens.dashboard.DashboardScreen
 import com.jarvis.assistant.ui.screens.history.HistoryScreen
 import com.jarvis.assistant.ui.screens.home.HomeScreen
 import com.jarvis.assistant.ui.screens.memory.MemoryScreen
+import com.jarvis.assistant.ui.screens.quotex.QuotexScreen
 import com.jarvis.assistant.ui.screens.wingo.WinGoScreen
 import com.jarvis.assistant.ui.screens.permissions.PermissionsScreen
 import com.jarvis.assistant.ui.screens.settings.SettingsScreen
@@ -109,7 +110,8 @@ fun JarvisNavGraph() {
                     onOpenMemory = { navController.navigate("memory") },
                     onOpenSettings = { navController.navigate("settings") },
                     onOpenRemote = { navController.navigate("remote") },
-                    onOpenWinGo = { navController.navigate("wingo") }
+                    onOpenWinGo = { navController.navigate("wingo") },
+                    onOpenQuotex = { navController.navigate("quotex") }
                 )
             }
             composable("chat") { ChatScreen(assistantViewModel) }
@@ -126,6 +128,7 @@ fun JarvisNavGraph() {
                 )
             }
             composable("wingo") { WinGoScreen(onBack = { navController.popBackStack() }) }
+            composable("quotex") { QuotexScreen(onBack = { navController.popBackStack() }) }
             composable("dashboard") { DashboardScreen(onBack = { navController.popBackStack() }) }
             composable("permissions") { PermissionsScreen(onBack = { navController.popBackStack() }) }
         }

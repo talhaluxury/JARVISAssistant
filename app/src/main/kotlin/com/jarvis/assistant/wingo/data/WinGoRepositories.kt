@@ -49,6 +49,13 @@ class GameHistoryRepository(private val dao: GameResultDao) {
 
     suspend fun count(): Int = dao.count()
 
+    /** Every stored round, oldest first. */
+    suspend fun allAscending(): List<RoundResult> = dao.all().map { it.toDomain() }
+
+    /** Restores rounds in bulk; periods that already exist are skipped. Returns how many were new. */
+    suspend fun insertAllNew(results: List<RoundResult>): Int =
+        dao.insertAll(results.map { it.toEntity() }).count { it != -1L }
+
     suspend fun clear() = dao.clearAll()
 }
 

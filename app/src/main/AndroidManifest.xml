@@ -129,6 +129,22 @@
             android:name=".wingo.overlay.WinGoOverlayService"
             android:exported="false" />
 
+        <!-- Quotex Analyzer: read-only chart-price capture + floating HUD (analysis only, no trading) -->
+        <service
+            android:name=".quotex.capture.QuotexMonitorService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
+
+        <service
+            android:name=".quotex.overlay.QuotexOverlayService"
+            android:exported="false" />
+
+        <activity
+            android:name=".quotex.capture.QuotexCaptureConsentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <activity
             android:name=".wingo.capture.WinGoCaptureConsentActivity"
             android:exported="false"

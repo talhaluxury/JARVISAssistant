@@ -65,7 +65,8 @@ fun HomeScreen(
     onOpenMemory: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenRemote: () -> Unit = {},
-    onOpenWinGo: () -> Unit = {}
+    onOpenWinGo: () -> Unit = {},
+    onOpenQuotex: () -> Unit = {}
 ) {
     val voice by viewModel.voiceState.collectAsState()
     val status by viewModel.statusText.collectAsState()
@@ -150,7 +151,8 @@ fun HomeScreen(
                         RadialMenuItem("PERM", onOpenPermissions),
                         RadialMenuItem("MEM", onOpenMemory),
                         RadialMenuItem("CTRL", onOpenRemote),
-                        RadialMenuItem("WIN", onOpenWinGo)
+                        RadialMenuItem("WIN", onOpenWinGo),
+                        RadialMenuItem("QTX", onOpenQuotex)
                     )
                 )
             }

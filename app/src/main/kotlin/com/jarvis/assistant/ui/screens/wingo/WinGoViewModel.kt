@@ -43,6 +43,9 @@ class WinGoViewModel(application: Application) : AndroidViewModel(application) {
     private val _liveReport = MutableStateFlow<BacktestReport?>(null)
     val liveReport: StateFlow<BacktestReport?> = _liveReport.asStateFlow()
 
+    private val _dataInfo = MutableStateFlow("")
+    val dataInfo: StateFlow<String> = _dataInfo.asStateFlow()
+
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
@@ -118,6 +121,43 @@ class WinGoViewModel(application: Application) : AndroidViewModel(application) {
                 )
             } catch (e: Exception) {
                 _test.update { it.copy(info = "Import failed: ${e.message ?: "unknown error"}") }
+            }
+        }
+    }
+
+    /** Writes every stored verified round to [uri] as CSV so it can be restored after a reinstall. */
+    fun exportTo(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val csv = module.coordinator.exportCsv()
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(csv) }
+                }
+                _dataInfo.value = "Saved ${csv.lines().count { it.isNotBlank() } - 1} rounds."
+            } catch (e: Exception) {
+                _dataInfo.value = "Export failed: ${e.message ?: "unknown error"}"
+            }
+        }
+    }
+
+    /** Adds rounds from a backup CSV into the live history (duplicates are skipped). */
+    fun restoreFrom(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val text = withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                }
+                if (text == null) {
+                    _dataInfo.value = "Could not open that file."
+                    return@launch
+                }
+                val parsed = withContext(Dispatchers.Default) { CsvImporter.parse(text) }
+                val added = module.coordinator.restoreResults(parsed.results)
+                _dataInfo.value = "Restored $added new rounds (${parsed.results.size - added} already existed, " +
+                    "${parsed.rejectedLines.size} invalid lines skipped)."
+                refreshAnalytics()
+            } catch (e: Exception) {
+                _dataInfo.value = "Restore failed: ${e.message ?: "unknown error"}"
             }
         }
     }

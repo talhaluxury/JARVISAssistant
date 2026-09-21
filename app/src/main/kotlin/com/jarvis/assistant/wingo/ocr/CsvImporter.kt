@@ -10,6 +10,14 @@ data class ImportResult(
     val duplicates: Int
 )
 
+/** Backup format: identical to what [CsvImporter] reads, so an export can always be restored. */
+object CsvExporter {
+    fun toCsv(results: List<RoundResult>): String = buildString {
+        appendLine("Period,Number,BigSmall,Color")
+        for (r in results) appendLine("${r.period},${r.number},${r.bigSmall.name},${r.color}")
+    }
+}
+
 /** Offline TEST MODE import: `Period,Number,BigSmall,Color` (BigSmall and Color optional). */
 object CsvImporter {
 

@@ -205,7 +205,8 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             // the AI — instant, always correct, and work fully offline / without an API key.
             // WinGo analyzer questions ("analyze game", "show signal" ...) are answered from stored data.
             // Only claims utterances that clearly concern the game; everything else falls through.
-            container.winGo.voice.tryHandle(text)?.let { winGoReply ->
+            val analyzerReply = container.winGo.voice.tryHandle(text) ?: container.quotex.voice.tryHandle(text)
+            analyzerReply?.let { winGoReply ->
                 val winGoConversation = ensureConversation(text)
                 container.conversationRepository.addMessage(winGoConversation, "user", text)
                 container.conversationRepository.addMessage(winGoConversation, "assistant", winGoReply)

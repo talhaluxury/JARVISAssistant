@@ -1,4 +1,4 @@
-# JARVIS WinGo Analyzer
+# JARVIS WinGo Analyzer (and Quotex Analyzer, see the end)
 
 A read-only analysis module for the WinGo Big/Small game history shown on your own screen.
 It reads results, stores them, runs a statistical ensemble and **reports what it can measure** – nothing more.
@@ -76,3 +76,42 @@ The GitHub Actions workflow `wingo-verify.yml` runs the tests and builds; the ex
 * Colour dots cannot be OCR'd, so colour is derived from the number (and only cross-checked if colour *words* are visible).
 * Overlay uses `FLAG_SECURE` so the analyzer never reads its own HUD; this also blocks screenshots of the HUD.
 * This module was written without a Kotlin compiler available. Run the CI workflow first and fix any compile message it reports.
+
+
+## Data backup and restore (WinGo)
+
+*Setup screen → DATA BACKUP → Export data* saves every verified round as `wingo_history.csv` (pick Downloads).
+After a reinstall, *Restore data* adds every round that is missing; rounds already stored are kept, and the engine is
+rebuilt from the merged history. Only verified rounds are exported; live accuracy statistics start fresh and are
+recomputed by the backtest from the restored rounds.
+
+---
+
+# JARVIS Quotex Analyzer
+
+Same idea as WinGo, for a Quotex chart on your own screen: it reads the asset name and the live price from the chart,
+builds candles, runs a walk-forward ensemble, and answers in a small floating chat. **Analysis only.** It cannot place,
+prepare or confirm a trade (the existing `trading/QuotexModels.kt` boundary is kept, and the same automated test that
+guards WinGo now also scans the Quotex folder for tap/gesture/automation APIs).
+
+Open it from the radial menu → **QTX**, or say "JARVIS Quotex signal / why / accuracy / backtest".
+
+## How it works
+1. Screen capture (Android consent dialog, visible notification) → OCR of the region you choose (default: top 6% to 85% of the screen).
+2. `GridPriceFinder`: the axis labels are evenly spaced; the live price is the one label that is *off that grid*, and it is
+   cross-checked against where it should sit vertically. If anything is ambiguous, no price is recorded.
+3. Ticks → candles (10/15/30/60 s) → stored in a separate database (`quotex_db`).
+4. Six data-driven models (EMA trend, RSI zone, Bollinger zone, momentum, last-3-candles, recent drift) look at what price
+   did *expiry* candles after past candles in the same state. Weights come from each model's walk-forward record.
+5. The same gates as WinGo: confidence ≥ 55%, models agree, and a **verified edge**. Because overlapping expiries are
+   correlated, the edge test and the backtest verdict use only non-overlapping calls.
+6. The backtest report shows break-even accuracy for your payout and a simulated flat-stake profit/loss.
+
+## Honest limits
+* Short-term price moves are close to random; OTC assets are priced by the broker. On a fair random walk the analyzer
+  shows ~50% and (almost) no signals - use *Test mode → Random control* to see that yourself.
+* With an 85% payout you must win ~54% of trades just to break even.
+* The chart reader is a heuristic. Check it on your phone: the *Chart* line should say PRICE READ and the last price
+  should match the screen. If it does not, adjust the screen area sliders, or add prices by hand to test the rest.
+* Only one screen-capture monitor (WinGo or Quotex) should run at a time.
+* Backup: *DATA BACKUP → Export data* (`quotex_candles.csv`) and *Restore data* work exactly like WinGo's.

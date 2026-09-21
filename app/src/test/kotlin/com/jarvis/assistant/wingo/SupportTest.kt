@@ -167,22 +167,24 @@ class SupportTest {
     // ---- no automation: the module must never touch the game ------------------------------------------------------------
 
     @Test
-    fun wingoModuleContainsNoAutomationOrInputInjection() {
-        val candidates = listOf(
-            File("src/main/kotlin/com/jarvis/assistant/wingo"),
-            File("app/src/main/kotlin/com/jarvis/assistant/wingo")
-        )
-        val dir = candidates.firstOrNull { it.isDirectory }
-        assertNotNull("WinGo source folder not found from ${File(".").absolutePath}", dir)
+    fun wingoAndQuotexModulesContainNoAutomationOrInputInjection() {
         val forbidden = listOf(
             "dispatchGesture", "GestureDescription", "performAction", "performGlobalAction", "AccessibilityService",
             "JarvisAccessibilityService", "AndroidActionExecutor", "Runtime.getRuntime", "ProcessBuilder",
             "injectInputEvent", "MotionEvent.obtain", "Instrumentation", "sendKeyEvent"
         )
         val offenders = ArrayList<String>()
-        dir!!.walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { file ->
-            val text = file.readText()
-            for (token in forbidden) if (text.contains(token)) offenders.add("${file.name}: $token")
+        for (module in listOf("wingo", "quotex")) {
+            val candidates = listOf(
+                File("src/main/kotlin/com/jarvis/assistant/$module"),
+                File("app/src/main/kotlin/com/jarvis/assistant/$module")
+            )
+            val dir = candidates.firstOrNull { it.isDirectory }
+            assertNotNull("$module source folder not found from ${File(".").absolutePath}", dir)
+            dir!!.walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { file ->
+                val text = file.readText()
+                for (token in forbidden) if (text.contains(token)) offenders.add("${file.name}: $token")
+            }
         }
         assertTrue("forbidden automation APIs referenced: $offenders", offenders.isEmpty())
     }

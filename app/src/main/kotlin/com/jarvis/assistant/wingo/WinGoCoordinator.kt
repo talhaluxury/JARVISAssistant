@@ -15,6 +15,7 @@ import com.jarvis.assistant.wingo.domain.PeriodFormat
 import com.jarvis.assistant.wingo.domain.RoundResult
 import com.jarvis.assistant.wingo.domain.Signal
 import com.jarvis.assistant.wingo.domain.WinGoConfig
+import com.jarvis.assistant.wingo.ocr.CsvExporter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -271,6 +272,25 @@ class WinGoCoordinator(
             modelStatuses = mutex.withLock { engine.modelStatuses() },
             recentResults = snapshot.takeLast(RECENT_SHOWN).reversed()
         )
+    }
+
+    /** All stored verified rounds as CSV text (backup). */
+    suspend fun exportCsv(): String {
+        ensureReady()
+        return CsvExporter.toCsv(history.allAscending())
+    }
+
+    /**
+     * Restores rounds from a backup (e.g. after reinstalling). Existing periods are kept as they are,
+     * new ones are added, then the engine is rebuilt from the merged history. Returns how many were new.
+     */
+    suspend fun restoreResults(restored: List<RoundResult>): Int {
+        ensureReady()
+        return mutex.withLock {
+            val added = history.insertAllNew(restored)
+            if (added > 0) initialiseLocked()
+            added
+        }
     }
 
     suspend fun recentResults(count: Int): List<RoundResult> {

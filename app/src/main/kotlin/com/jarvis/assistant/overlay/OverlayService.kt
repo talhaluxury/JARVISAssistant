@@ -312,7 +312,8 @@ class OverlayService : Service() {
         // Routing-critical commands (scroll, back, home, search-here, open app, stop) are
         // matched locally first: instant, always acts on the current foreground app, never
         // opens JARVIS, and works even with no AI configured.
-        container.winGo.voice.tryHandle(text)?.let { winGoReply ->
+        val analyzerReply = container.winGo.voice.tryHandle(text) ?: container.quotex.voice.tryHandle(text)
+        analyzerReply?.let { winGoReply ->
             setState(VoiceState.THINKING)
             val winGoConversation = ensureConversation()
             container.conversationRepository.addMessage(winGoConversation, "user", text)

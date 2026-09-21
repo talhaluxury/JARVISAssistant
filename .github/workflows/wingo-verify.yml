@@ -1,10 +1,11 @@
-name: WinGo verify (tests + builds)
+name: WinGo + Quotex verify (tests + builds)
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
       - 'app/src/**/wingo/**'
+      - 'app/src/**/quotex/**'
       - 'app/build.gradle.kts'
 
 jobs:
@@ -20,7 +21,7 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Unit tests (WinGo)
-        run: gradle testDebugUnitTest --tests "com.jarvis.assistant.wingo.*"
+        run: gradle testDebugUnitTest --tests "com.jarvis.assistant.wingo.*" --tests "com.jarvis.assistant.quotex.*"
       - name: Debug APK
         run: gradle assembleDebug
       - name: Release APK + AAB (signed only if keystore secrets exist)

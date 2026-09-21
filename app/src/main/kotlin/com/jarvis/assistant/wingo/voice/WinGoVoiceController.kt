@@ -16,6 +16,7 @@ class WinGoVoiceController(
     suspend fun tryHandle(rawText: String): String? {
         val t = normalize(rawText)
         if (t.isEmpty()) return null
+        if ("quotex" in t) return null // Quotex has its own controller
         val gameWord = "game" in t || "wingo" in t || "win go" in t
         val startsMonitor = "start" in t && "monitor" in t && gameWord
         val stopsMonitor = "stop" in t && "monitor" in t && gameWord
