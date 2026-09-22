@@ -152,7 +152,10 @@ class WinGoMonitorService : Service() {
                         if (changed || stale || stabilizer.hasPending()) {
                             lastSignature = signature
                             lastOcrAt = now
-                            val rows = parser.parse(textReader.read(crop))
+                            val ocrLines = textReader.read(crop)
+                            val rows = parser.parse(ocrLines)
+                            val pager = parser.parsePager(ocrLines)
+                            if (pager != null) coordinator.setPage(pager.first, pager.second)
                             val verdicts = validator.validateBatch(rows, now)
                             val dataRows = rows.count { it.period != null }
                             if (dataRows == 0) misses++ else misses = 0
@@ -160,6 +163,8 @@ class WinGoMonitorService : Service() {
                             val trusted = verdicts.mapNotNull { if (it.status == RowStatus.TRUSTED) it.result else null }
                             val confirmed = stabilizer.offer(trusted)
                             if (confirmed.isNotEmpty()) coordinator.onConfirmedResults(confirmed)
+                            val newestVisible = trusted.maxOfOrNull { it.period }
+                            if (newestVisible != null) coordinator.onVisiblePeriods(newestVisible)
 
                             if (misses >= config.missesBeforePause) {
                                 // Game screen went away: pause analysis and go back to looking for it.

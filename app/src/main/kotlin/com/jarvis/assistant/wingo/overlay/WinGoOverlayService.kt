@@ -41,7 +41,7 @@ import kotlin.math.abs
  */
 class WinGoOverlayService : Service() {
 
-    private enum class Tab { HISTORY, ANALYSIS, CHAT }
+    private enum class Tab { ANALYSIS, HISTORY, PERFORMANCE, CHAT }
 
     private lateinit var windowManager: WindowManager
     private lateinit var module: WinGoModule
@@ -50,7 +50,7 @@ class WinGoOverlayService : Service() {
     private var root: LinearLayout? = null
     private lateinit var params: WindowManager.LayoutParams
     private var expanded = false
-    private var tab = Tab.HISTORY
+    private var tab = Tab.ANALYSIS
     private var chatText = "Ask about the current round. Answers come from stored data only."
     private var lastState = WinGoUiState()
 
@@ -144,7 +144,7 @@ class WinGoOverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             setOnTouchListener(DragTouch {})
         }
-        val title = label("J.A.R.V.I.S · WIN GO", 12f, CYAN, bold = true)
+        val title = label("J.A.R.V.I.S.  WIN GO ANALYZER", 12f, CYAN, bold = true)
         header.addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         val collapse = label("–", 16f, CYAN, bold = true).apply {
             setPadding(dp(10), 0, dp(10), 0)
@@ -169,9 +169,9 @@ class WinGoOverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(8), 0, dp(4))
         }
-        for ((t, name) in listOf(Tab.HISTORY to "HISTORY", Tab.ANALYSIS to "ANALYSIS", Tab.CHAT to "CHAT")) {
-            val tv = label(name, 11f, MUTED, bold = true).apply {
-                setPadding(0, 0, dp(14), 0)
+        for ((t, name) in listOf(Tab.ANALYSIS to "ANALYSIS", Tab.HISTORY to "HISTORY", Tab.PERFORMANCE to "PERFORMANCE", Tab.CHAT to "CHAT")) {
+            val tv = label(name, 10f, MUTED, bold = true).apply {
+                setPadding(0, 0, dp(8), 0)
                 setOnClickListener { showTab(t) }
             }
             tabViews[t] = tv
@@ -229,7 +229,7 @@ class WinGoOverlayService : Service() {
         container.addView(panel)
         root = container
         windowManager.addView(container, params)
-        showTab(Tab.HISTORY)
+        showTab(Tab.ANALYSIS)
         render(lastState)
     }
 
@@ -280,40 +280,54 @@ class WinGoOverlayService : Service() {
         }
 
         pill.text = when {
-            !state.monitorOn -> "◉ WIN GO · OFF"
-            state.screenStatus == ScreenStatus.NOT_DETECTED -> "◉ WIN GO · NO GAME"
-            p != null && side != null && signal != Signal.WAIT -> "◉ ${side.name} ${Fmt.pct(p.confidence)}"
-            else -> "◉ WAIT"
+            !state.monitorOn -> "◉ JARVIS · OFF"
+            state.screenStatus == ScreenStatus.NOT_DETECTED -> "◉ WIN GO SCREEN NOT DETECTED"
+            state.browsingHistory -> "◉ JARVIS · HISTORY"
+            p != null && side != null && signal != Signal.WAIT -> "◉ JARVIS  ${side.name} ${Fmt.pct(p.confidence)}"
+            else -> "◉ JARVIS  WAIT"
         }
         pill.setTextColor(color)
 
-        periodView.text = "PERIOD  ${state.predictionPeriod ?: "—"}"
-        predictionView.text = if (signal != Signal.WAIT && side != null) side.name else "WAIT"
+        val phaseText = if (state.monitorOn) WinGoNarrator.phaseText(state.phase) else "MONITOR OFF"
+        periodView.text = "PERIOD  ${state.predictionPeriod ?: "—"}\nSTATUS  $phaseText"
+        val shown = signal != Signal.WAIT && side != null
+        predictionView.text = if (shown) (side?.name ?: "WAIT") else "WAIT"
         predictionView.setTextColor(color)
 
         val detail = StringBuilder()
-        if (p != null && side != null && signal != Signal.WAIT) {
-            detail.appendLine("CONFIDENCE  ${Fmt.pct(p.confidence)}")
-            detail.appendLine("SIGNAL      ${signal.name}")
-            detail.appendLine("MODELS      ${p.agree}/${p.totalModels} agree")
+        if (p != null && side != null && shown) {
+            detail.appendLine("NEXT ESTIMATE   ${side.name}")
+            detail.appendLine("PROBABILITY     ${Fmt.pct(p.confidence)}")
+            detail.appendLine("MODEL AGREEMENT ${p.agree} / ${p.totalModels}")
+            val e = p.pattern
+            if (e != null) {
+                detail.appendLine("PATTERN         ${e.context}")
+                detail.appendLine("PATTERN MATCHES ${e.occurrences}  (${e.bigAfter} BIG / ${e.smallAfter} SMALL)")
+            } else {
+                detail.appendLine("PATTERN         none with enough history")
+            }
+            detail.appendLine("SIGNAL          ${signal.name}")
         } else {
             detail.appendLine(state.message ?: p?.waitReason ?: "Collecting verified results…")
+            if (p != null && !p.edge.verified) detail.appendLine("NO VERIFIED EDGE")
         }
-        val bt = state.backtest?.allCalls
-        val btAcc = bt?.accuracy
-        if (bt != null && btAcc != null) {
-            detail.appendLine("BACKTEST    ${Fmt.pct(btAcc, 1)} raw (n=${bt.calls})")
+        val bt = state.backtest
+        val last100 = bt?.last100?.accuracy
+        val allTime = bt?.allCalls?.accuracy
+        if (bt != null && allTime != null) {
+            val recent = last100?.let { "  (last 100: ${Fmt.pct(it, 1)})" } ?: ""
+            detail.appendLine("MEASURED        ${Fmt.pct(allTime, 1)} walk-forward$recent")
         } else {
-            detail.appendLine("BACKTEST    n/a")
+            detail.appendLine("MEASURED        n/a")
         }
-        val last = state.lastOutcome
-        if (last != null) {
-            val mark = when (last.correct) {
-                true -> "✓ CORRECT"
-                false -> "✕ WRONG"
-                null -> "—"
-            }
-            detail.append("LAST        $mark (${last.actual.name})")
+        if (state.browsingHistory) detail.appendLine("MODE            HISTORY (paused)")
+        val pageCur = state.pageCurrent
+        val pageTot = state.pageTotal
+        if (pageCur != null && pageTot != null) detail.appendLine("PAGE            $pageCur/$pageTot")
+        if (state.missingRounds > 0) detail.appendLine("MISSING         ${state.missingRounds} rounds")
+        val ver = state.lastVerification
+        if (ver != null) {
+            detail.append("PREVIOUS        ${ver.predicted?.name ?: "WAIT"} → ${ver.actual.name} (${ver.actualNumber})  ${ver.statusText}")
         }
         detailView.text = detail.toString().trimEnd()
         renderContent()
@@ -323,20 +337,23 @@ class WinGoOverlayService : Service() {
         if (root == null) return
         val state = lastState
         contentView.text = when (tab) {
-            Tab.HISTORY -> if (state.recentResults.isEmpty()) {
-                "No verified rounds yet."
-            } else {
-                state.recentResults.joinToString("  ") { it.bigSmall.letter.toString() } + "\n\n" +
-                    state.recentResults.joinToString("\n") { "…${it.period.takeLast(4)}  ${it.number}  ${it.bigSmall.name}" }
-            }
             Tab.ANALYSIS -> {
                 val p = state.prediction
                 if (p == null) {
                     state.message ?: "No analysis yet."
                 } else {
-                    WinGoNarrator.modelLines(state) + "\n\n" + p.edge.summary + "\n" + (state.backtest?.verdict ?: "")
+                    WinGoNarrator.pattern(state) + "\n\n" + WinGoNarrator.modelLines(state) + "\n\n" + p.edge.summary +
+                        "\n" + (state.backtest?.verdict ?: "")
                 }
             }
+            Tab.HISTORY -> if (state.recentResults.isEmpty()) {
+                "No verified rounds yet."
+            } else {
+                state.recentResults.joinToString("  ") { it.bigSmall.letter.toString() } + "\n\n" +
+                    state.recentResults.joinToString("\n") { "…${it.period.takeLast(4)}  ${it.number}  ${it.bigSmall.name}" } +
+                    "\n\n" + WinGoNarrator.coverage(state)
+            }
+            Tab.PERFORMANCE -> WinGoNarrator.accuracy(state, null) + "\n\n" + WinGoNarrator.modelPerformance(state)
             Tab.CHAT -> chatText
         }
     }

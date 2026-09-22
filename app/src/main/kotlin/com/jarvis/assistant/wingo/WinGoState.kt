@@ -4,18 +4,27 @@ import com.jarvis.assistant.wingo.analysis.AccuracyWindow
 import com.jarvis.assistant.wingo.analysis.BandStats
 import com.jarvis.assistant.wingo.analysis.BacktestReport
 import com.jarvis.assistant.wingo.analysis.ModelStatus
+import com.jarvis.assistant.wingo.analysis.Verification
 import com.jarvis.assistant.wingo.analysis.WinGoPrediction
 import com.jarvis.assistant.wingo.domain.BigSmall
 import com.jarvis.assistant.wingo.domain.RoundResult
 
 enum class ScreenStatus { NOT_STARTED, SEARCHING, TRACKING, NOT_DETECTED }
 
+/** Where the current round is in the estimate -> result -> verification cycle. */
+enum class RoundPhase { IDLE, ANALYZING, PREDICTION_READY, WAITING_FOR_RESULT, RESULT_DETECTED, VERIFYING, PREDICTION_VERIFIED }
+
+/** A run of missing rounds and roughly where to find it in the game's history pages. */
+data class GapInfo(val firstMissing: String, val lastMissing: String, val count: Int, val pageHint: Int?)
+
 /** Result of comparing a finished round with the prediction that was made before it. */
 data class OutcomeMark(
     val period: String,
     val predicted: BigSmall?,
     val actual: BigSmall,
-    val wasSignal: Boolean
+    val wasSignal: Boolean,
+    val actualNumber: Int = -1,
+    val probBig: Double? = null
 ) {
     val correct: Boolean? get() = predicted?.let { it == actual }
 }
@@ -33,7 +42,15 @@ data class WinGoUiState(
     val lastOutcome: OutcomeMark? = null,
     val recentResults: List<RoundResult> = emptyList(),
     val backtest: BacktestReport? = null,
-    val message: String? = null
+    val message: String? = null,
+    val missingRounds: Int = 0,
+    val gaps: List<GapInfo> = emptyList(),
+    val pageCurrent: Int? = null,
+    val pageTotal: Int? = null,
+    val backfilledSession: Int = 0,
+    val browsingHistory: Boolean = false,
+    val phase: RoundPhase = RoundPhase.IDLE,
+    val lastVerification: Verification? = null
 )
 
 /** Everything the analytics screen and chat need, derived from stored predictions and results. */

@@ -16,7 +16,11 @@ data class CallOutcome(
     val signal: Signal,
     val agree: Int,
     val totalModels: Int,
-    val actual: BigSmall
+    val actual: BigSmall,
+    /** How many earlier occurrences backed the primary exact pattern (0 = none), its length and kind. */
+    val patternSamples: Int = 0,
+    val patternLength: Int = 0,
+    val patternKind: String? = null
 ) {
     val correct: Boolean get() = side == actual
     val wasSignal: Boolean get() = signal != Signal.WAIT
@@ -40,6 +44,11 @@ data class PerfStats(
 }
 
 data class BandStats(val label: String, val level: ConfidenceLevel, val calls: Int, val correct: Int) {
+    val accuracy: Double? get() = if (calls == 0) null else correct.toDouble() / calls
+}
+
+/** Accuracy for an arbitrary grouping (e.g. by pattern sample size). */
+data class BucketStats(val label: String, val calls: Int, val correct: Int) {
     val accuracy: Double? get() = if (calls == 0) null else correct.toDouble() / calls
 }
 
@@ -92,6 +101,21 @@ object PerformanceAnalyzer {
         return ConfidenceLevel.values().map { level ->
             val inBand = calls.filter { config.levelFor(it.confidence) == level }
             BandStats(labels.getValue(level), level, inBand.size, inBand.count { it.correct })
+        }
+    }
+
+    /** Accuracy by how many earlier occurrences backed the primary pattern. */
+    fun byPatternSamples(calls: List<CallOutcome>): List<BucketStats> {
+        val buckets = listOf(
+            "no pattern" to { c: CallOutcome -> c.patternSamples == 0 },
+            "20-49 matches" to { c: CallOutcome -> c.patternSamples in 1..49 },
+            "50-99 matches" to { c: CallOutcome -> c.patternSamples in 50..99 },
+            "100-199 matches" to { c: CallOutcome -> c.patternSamples in 100..199 },
+            "200+ matches" to { c: CallOutcome -> c.patternSamples >= 200 }
+        )
+        return buckets.map { (label, test) ->
+            val group = calls.filter(test)
+            BucketStats(label, group.size, group.count { it.correct })
         }
     }
 

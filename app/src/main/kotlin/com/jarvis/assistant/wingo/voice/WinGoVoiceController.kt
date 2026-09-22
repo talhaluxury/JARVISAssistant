@@ -18,17 +18,20 @@ class WinGoVoiceController(
         if (t.isEmpty()) return null
         if ("quotex" in t) return null // Quotex has its own controller
         val gameWord = "game" in t || "wingo" in t || "win go" in t
-        val startsMonitor = "start" in t && "monitor" in t && gameWord
-        val stopsMonitor = "stop" in t && "monitor" in t && gameWord
-        if (startsMonitor) return controls.startMonitoring()
-        if (stopsMonitor) return controls.stopMonitoring()
+        // "Jarvis start monitoring" / "stop monitoring": no other JARVIS command uses these phrases.
+        if ("start" in t && "monitor" in t) return controls.startMonitoring()
+        if ("stop" in t && "monitor" in t) return controls.stopMonitoring()
 
         val keyword = when {
             "backtest" in t -> "backtest"
             "analyze" in t || "analyse" in t -> "analyze"
-            "show signal" in t || "current signal" in t -> "signal"
-            "show accuracy" in t -> "accuracy"
-            "show history" in t || "recent history" in t -> "history"
+            "find the pattern" in t || "what pattern" in t || "show pattern" in t || "matching pattern" in t || "show matching" in t -> "pattern"
+            "explain the prediction" in t || "explain prediction" in t || "explain the estimate" in t ||
+                "why big" in t || "why small" in t || "why wait" in t -> "why"
+            "what is the signal" in t || "show signal" in t || "current signal" in t || "next estimate" in t || "the signal" in t -> "signal"
+            "show accuracy" in t || "model performance" in t -> "accuracy"
+            "show history" in t || "recent history" in t || "last results" in t -> "history"
+            "missing" in t || "history gaps" in t || "history pages" in t -> "gaps"
             else -> return null
         }
         val active = coordinatorProvider().state.value.monitorOn

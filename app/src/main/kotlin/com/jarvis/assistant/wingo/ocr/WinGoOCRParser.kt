@@ -13,6 +13,19 @@ class WinGoOCRParser {
     private val labelRegex = Regex("\\b(big|small)\\b", RegexOption.IGNORE_CASE)
     private val colorRegex = Regex("\\b(red|green|violet|purple)\\b", RegexOption.IGNORE_CASE)
 
+    private val pagerRegex = Regex("^(\\d{1,3})\\s*/\\s*(\\d{1,3})$")
+
+    /** The history pager text (e.g. "3/50") as (current, total), or null when it is not readable. */
+    fun parsePager(lines: List<OcrLine>): Pair<Int, Int>? {
+        for (line in lines) {
+            val m = pagerRegex.find(line.text.trim()) ?: continue
+            val current = m.groupValues[1].toIntOrNull() ?: continue
+            val total = m.groupValues[2].toIntOrNull() ?: continue
+            if (total in 2..500 && current in 1..total) return Pair(current, total)
+        }
+        return null
+    }
+
     fun parse(lines: List<OcrLine>): List<ParsedRow> {
         val usable = lines.filter { it.text.isNotBlank() }
         if (usable.isEmpty()) return emptyList()

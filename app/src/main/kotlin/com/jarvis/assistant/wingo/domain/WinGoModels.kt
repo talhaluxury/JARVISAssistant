@@ -124,7 +124,7 @@ data class WinGoConfig(
     val minOcrConfidence: Float = 0.70f,
     val requireBigSmallLabel: Boolean = true,
     val confirmations: Int = 2,
-    val sampleIntervalMs: Long = 1500L,
+    val sampleIntervalMs: Long = 1000L,
     val searchIntervalMs: Long = 3000L,
     val forcedRefreshMs: Long = 20_000L,
     val missesBeforePause: Int = 4
@@ -155,4 +155,43 @@ data class NormalizedRegion(val left: Float, val top: Float, val right: Float, v
 object Fmt {
     fun pct(fraction: Double, digits: Int = 0): String = String.format(Locale.US, "%.${digits}f%%", fraction * 100.0)
     fun num(value: Double, digits: Int = 1): String = String.format(Locale.US, "%.${digits}f", value)
+}
+
+
+/** A run of consecutive periods that are missing between two stored rounds of the same day. */
+data class PeriodGap(val firstMissing: String, val lastMissing: String, val count: Int)
+
+object PeriodGaps {
+    /** Gaps between neighbouring stored periods (ascending input). Different days are never compared. */
+    fun find(periodsAscending: List<String>): List<PeriodGap> {
+        val out = ArrayList<PeriodGap>()
+        for (i in 1 until periodsAscending.size) {
+            val a = periodsAscending[i - 1]
+            val b = periodsAscending[i]
+            if (a.length != b.length || PeriodFormat.dayOf(a) != PeriodFormat.dayOf(b)) continue
+            val av = a.toLongOrNull() ?: continue
+            val bv = b.toLongOrNull() ?: continue
+            val missing = bv - av - 1
+            if (missing < 1) continue
+            out.add(
+                PeriodGap(
+                    (av + 1).toString().padStart(a.length, '0'),
+                    (bv - 1).toString().padStart(a.length, '0'),
+                    missing.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                )
+            )
+        }
+        return out
+    }
+
+    /**
+     * Roughly which history page shows [gapLast], if [newest] is the top row of page 1. The game adds a
+     * row every round, so pages shift by one row each round - treat the answer as "around page N".
+     */
+    fun pageHint(newest: String, gapLast: String, rowsPerPage: Int = 10): Int? {
+        val n = newest.toLongOrNull() ?: return null
+        val g = gapLast.toLongOrNull() ?: return null
+        if (g > n || rowsPerPage <= 0) return null
+        return ((n - g) / rowsPerPage).toInt() + 1
+    }
 }

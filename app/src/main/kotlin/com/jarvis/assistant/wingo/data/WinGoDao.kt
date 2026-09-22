@@ -47,8 +47,8 @@ interface PredictionDao {
     @Query("SELECT * FROM prediction_records WHERE period = :period LIMIT 1")
     suspend fun byPeriod(period: String): PredictionRecordEntity?
 
-    @Query("UPDATE prediction_records SET actualResult = :actual, correct = :correct WHERE period = :period")
-    suspend fun resolve(period: String, actual: String, correct: Boolean): Int
+    @Query("UPDATE prediction_records SET actualResult = :actual, correct = :correct, verifiedAt = :verifiedAt WHERE period = :period")
+    suspend fun resolve(period: String, actual: String, correct: Boolean, verifiedAt: Long): Int
 
     @Query("SELECT * FROM prediction_records WHERE correct IS NOT NULL ORDER BY period DESC LIMIT :limit")
     suspend fun latestResolved(limit: Int): List<PredictionRecordEntity>

@@ -23,7 +23,12 @@ fun WinGoPrediction.toRecord(period: String, timestamp: Long): PredictionRecordE
         modelAgreement = agree,
         modelCount = totalModels,
         candidate = isCandidate,
-        timestamp = timestamp
+        timestamp = timestamp,
+        probability = probBig,
+        historySize = historySize,
+        patternUsed = pattern?.context,
+        patternSampleSize = pattern?.occurrences ?: 0,
+        modelOutputsJson = ModelOutputsCodec.encode(outputs)
     )
 
 /** A resolved record becomes a [CallOutcome]; records with no lean (NONE) or no result yet are skipped. */
@@ -34,7 +39,9 @@ fun PredictionRecordEntity.toOutcome(): CallOutcome? {
         period = period, side = side, confidence = confidence,
         level = runCatching { ConfidenceLevel.valueOf(level) }.getOrDefault(ConfidenceLevel.VERY_LOW),
         signal = runCatching { Signal.valueOf(signal) }.getOrDefault(Signal.WAIT),
-        agree = modelAgreement, totalModels = modelCount, actual = actual
+        agree = modelAgreement, totalModels = modelCount, actual = actual,
+        patternSamples = patternSampleSize, patternLength = patternUsed?.length ?: 0,
+        patternKind = if (patternUsed != null) "EXACT" else null
     )
 }
 
@@ -68,10 +75,10 @@ class PredictionRepository(private val dao: PredictionDao) {
      * Attaches the real result to the prediction that was issued for [period]. Returns that stored
      * record (as it was before resolution), or null when no prediction had been issued for the round.
      */
-    suspend fun resolveStored(period: String, actual: BigSmall): PredictionRecordEntity? {
+    suspend fun resolveStored(period: String, actual: BigSmall, verifiedAt: Long = System.currentTimeMillis()): PredictionRecordEntity? {
         val record = dao.byPeriod(period) ?: return null
         val side = BigSmall.parse(record.prediction)
-        dao.resolve(period, actual.name, side != null && side == actual)
+        dao.resolve(period, actual.name, side != null && side == actual, verifiedAt)
         return record
     }
 

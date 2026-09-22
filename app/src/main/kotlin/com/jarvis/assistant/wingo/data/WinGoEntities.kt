@@ -34,5 +34,15 @@ data class PredictionRecordEntity(
     val candidate: Boolean,
     val actualResult: String? = null,
     val correct: Boolean? = null,
-    val timestamp: Long
+    val timestamp: Long,
+    /** P(BIG) of the ensemble at prediction time. */
+    val probability: Double = 0.0,
+    val historySize: Int = 0,
+    /** The exact sequence the estimate leaned on (e.g. "BSSBBS") and how many earlier occurrences it had. */
+    val patternUsed: String? = null,
+    val patternSampleSize: Int = 0,
+    /** Every model's output at prediction time (JSON, see ModelOutputsCodec). */
+    val modelOutputsJson: String? = null,
+    /** When the real result was read and the prediction verified. */
+    val verifiedAt: Long? = null
 )

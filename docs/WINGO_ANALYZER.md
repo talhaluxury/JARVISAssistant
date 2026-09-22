@@ -78,6 +78,46 @@ The GitHub Actions workflow `wingo-verify.yml` runs the tests and builds; the ex
 * This module was written without a Kotlin compiler available. Run the CI workflow first and fix any compile message it reports.
 
 
+## Deep history analysis and next-round estimate (WinGo)
+
+The engine now goes well beyond "recent count says BIG":
+
+* **Ten models**, each returning a probability, sample size and evidence: Recent Frequency, Rolling Windows
+  (5 to 500+ rounds), Streak, Transition (order 1-3), Baseline Deviation, Weighted Recent, exact **Pattern**
+  matching (context length 3-8, at least 20 earlier occurrences), **Similar Pattern** matching (near-misses,
+  weighted by closeness), **Sequence Outcome** (same BIG/SMALL composition regardless of order) and **Regime**
+  (streaky/balanced/alternating stretches).
+* Every model and every one of its sub-rules (a window size, a pattern length, a similarity rule) has its own
+  walk-forward record. A sub-rule that stops working out of sample loses weight and can be **switched off**
+  automatically — it keeps being tracked in case it starts working again.
+* **Signal strength is capped by what was actually measured.** Even a confident-looking ensemble estimate is
+  held to MEDIUM or LOW (or WAIT) if the real walk-forward accuracy of comparable calls hasn't reached that
+  level yet — the app never claims more than it has verified.
+* The next-round estimate is generated and stored **before** the result exists, then verified once the real
+  number appears. The overlay's STATUS line shows where the round is: ANALYZING → PREDICTION READY → WAITING
+  FOR RESULT → RESULT DETECTED → VERIFYING → PREDICTION VERIFIED. The predicted side is never shown as if it
+  were the result.
+* Ask "what pattern", "matching patterns", "why big" / "why small", "model performance", or "backtest this
+  pattern" — every answer cites real stored numbers (occurrences, historical hit rate, out-of-sample accuracy).
+* The backtest report now also breaks accuracy down by pattern length, by pattern sample size, and shows
+  last-100 / last-500 / all-time walk-forward accuracy, matching what the app is allowed to claim.
+
+## History pages and missing rounds (WinGo)
+
+The game keeps about 50 pages of 10 rounds. You can walk back through them yourself and JARVIS reads what is on screen:
+
+* Open *Game history* and press the ‹ arrow one page at a time. Stay about 2 seconds on each page: a round is only saved
+  after it was read identically in two samples (the sample interval is 1 s). JARVIS never presses anything for you.
+* Rows older than the newest stored round are back-filled into their place. The page indicator ("3/50") is read too,
+  because the capture area now extends down to it.
+* While an older page is showing, live signals are **paused** (a signal for "the next round" would be stale) and the HUD
+  says HISTORY. Go back to page 1 and they resume. The engine is rebuilt once, about 2.5 s after the last page, not per page.
+* **Missing rounds:** if rounds were skipped (you were on another screen, or a row could not be read cleanly), the app lists
+  the missing period ranges with a rough page number ("around page 3"; pages shift by one row every round). Look for those
+  periods in the game history - the app saves them when they appear. Ask the chat: "missing rounds".
+* A row whose digit or label is unreadable (the coloured digits are the hardest to OCR) is skipped rather than guessed, so it
+  will show up as missing; revisit that page and it usually reads on the second try.
+
 ## Data backup and restore (WinGo)
 
 *Setup screen → DATA BACKUP → Export data* saves every verified round as `wingo_history.csv` (pick Downloads).

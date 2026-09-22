@@ -18,6 +18,7 @@ import com.jarvis.assistant.wingo.domain.WinGoConfig
 import com.jarvis.assistant.wingo.domain.BigSmall
 import com.jarvis.assistant.wingo.domain.Signal
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -60,9 +61,14 @@ class AnalysisTest {
     }
 
     @Test
-    fun rollingWindowAveragesTheWindowsThatFit() {
+    fun rollingWindowUsesOnlyTheWindowsThatFitAndLeansWithTheData() {
+        // With 10 rounds only the 5- and 10-round windows fit; both are all-BIG, so the model should not abstain
+        // and must lean BIG with a sample size covering at least the largest window that fit.
         val out = RollingWindowModel().predict(history("B".repeat(10)))
-        assertEquals(11.0 / 12.0, out.probBig, 1e-9) // only the 10-round window fits
+        assertFalse(out.abstained)
+        assertEquals(BigSmall.BIG, out.prediction)
+        assertTrue(out.probBig > 0.8)
+        assertTrue(out.sampleSize >= 10)
     }
 
     @Test

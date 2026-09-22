@@ -54,6 +54,7 @@ import com.jarvis.assistant.wingo.analysis.PerfStats
 import com.jarvis.assistant.wingo.capture.WinGoCaptureConsentActivity
 import com.jarvis.assistant.wingo.domain.Fmt
 import com.jarvis.assistant.wingo.overlay.WinGoOverlayService
+import com.jarvis.assistant.wingo.voice.WinGoNarrator
 
 private val Cyan = Color(0xFF38BDF8)
 private val Bg = Color(0xFF0A0E14)
@@ -190,7 +191,8 @@ fun WinGoScreen(onBack: () -> Unit, vm: WinGoViewModel = viewModel()) {
         }
 
         val prediction = state.prediction
-        Panel("LIVE") {
+        Panel("NEXT ESTIMATE") {
+            Text(WinGoNarrator.phaseText(state.phase), color = Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
             if (prediction == null) {
                 Text(state.message ?: "No prediction yet.", color = Muted, fontSize = 12.sp)
             } else {
@@ -198,17 +200,55 @@ fun WinGoScreen(onBack: () -> Unit, vm: WinGoViewModel = viewModel()) {
                     if (prediction.isSignal) (prediction.side?.name ?: "WAIT") else "WAIT",
                     color = if (prediction.isSignal) Cyan else Muted, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace
                 )
-                Text("Period ${state.predictionPeriod ?: "—"}", color = Muted, fontSize = 11.sp)
+                Text("Target period ${state.predictionPeriod ?: "—"}  ·  history ${prediction.historySize} verified rounds", color = Muted, fontSize = 11.sp)
                 if (prediction.isSignal) {
-                    Mono("Confidence ${Fmt.pct(prediction.confidence)}  ·  Signal ${prediction.signal.name}  ·  ${prediction.agree}/${prediction.totalModels} models agree")
+                    Mono("Probability ${Fmt.pct(prediction.confidence)}  ·  Signal ${prediction.signal.name}")
+                    Mono("Model agreement ${prediction.agree} / ${prediction.totalModels}")
                 } else {
                     Text(prediction.waitReason ?: "WAIT — insufficient signal.", color = Warn, fontSize = 11.sp)
+                    if (!prediction.edge.verified) Text("NO VERIFIED EDGE", color = Warn, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                prediction.pattern?.let {
+                    Mono("Pattern ${it.context}  ·  ${it.occurrences} matches  ·  ${it.bigAfter} BIG / ${it.smallAfter} SMALL")
+                } ?: prediction.patternNote?.let { Text(it, color = Muted, fontSize = 11.sp) }
+                prediction.measuredNote?.let { Text(it, color = Warn, fontSize = 11.sp) }
+            }
+            state.lastVerification?.let { Mono(it.toText().replace("\n", "   ")) }
+        }
+
+        Panel("MEASURED PERFORMANCE (WALK-FORWARD)") {
+            val bt = state.backtest
+            if (bt == null) {
+                Text("Not enough verified history yet.", color = Muted, fontSize = 11.sp)
+            } else {
+                Mono("Last 100: ${statsLine(bt.last100)}")
+                Mono("Last 500: ${statsLine(bt.last500)}")
+                Mono("All-time: ${statsLine(bt.allCalls)}")
+                Text(bt.verdict, color = Warn, fontSize = 11.sp)
+                Text("By model (all-time)", color = Cyan, fontSize = 11.sp)
+                for (m in bt.modelStatuses) {
+                    Mono("${m.name}: ${m.allTimeAccuracy?.let { Fmt.pct(it, 1) } ?: "–"} (${m.allTimeSamples})  w ${Fmt.num(m.weight, 2)}" + if (m.disabled) "  off" else "")
                 }
             }
-            state.lastOutcome?.let {
-                val mark = when (it.correct) { true -> "✓ correct"; false -> "✕ wrong"; null -> "no lean" }
-                Mono("Last round …${it.period.takeLast(4)}: ${it.actual.name} ($mark)")
+        }
+
+        Panel("HISTORY PAGES AND MISSING ROUNDS") {
+            Mono("Stored rounds: ${state.historyCount}")
+            val pc = state.pageCurrent
+            val pt = state.pageTotal
+            if (pc != null && pt != null) Mono("History page on screen: $pc/$pt")
+            Mono("Older rounds saved this session: ${state.backfilledSession}")
+            Mono("Missing rounds: ${state.missingRounds}")
+            for (g in state.gaps) {
+                val range = if (g.count == 1) "…${g.firstMissing.takeLast(5)}" else "…${g.firstMissing.takeLast(5)} to …${g.lastMissing.takeLast(5)}"
+                Text("• $range (${g.count})" + (g.pageHint?.let { " ≈ page $it" } ?: ""), color = Warn, fontSize = 11.sp)
             }
+            Text(
+                "Open Game history in the game and press ‹ page by page (stay about 2 seconds on each page, up to all 50). " +
+                    "JARVIS saves every page it can read and pauses live signals while you browse. Rounds it could not read " +
+                    "cleanly show up above as missing - look for those periods again. Go back to page 1 when you are done.",
+                color = Muted, fontSize = 11.sp
+            )
         }
 
         Panel("ANALYTICS (LIVE PREDICTIONS)") {

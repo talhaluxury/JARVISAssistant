@@ -34,7 +34,8 @@ class GameRegionDetector(
         val rowHeight = (bottom - top).toFloat() / rows.size
         val margin = rowHeight * 0.75f
         val topFraction = ((top - margin) / frameHeight).coerceIn(0f, 0.98f)
-        val bottomFraction = ((bottom + margin) / frameHeight).coerceIn(topFraction + 0.02f, 1f)
+        // Extra room below the last row so the "3/50" page indicator is part of the region.
+        val bottomFraction = ((bottom + rowHeight * 2.4f) / frameHeight).coerceIn(topFraction + 0.02f, 1f)
         val region = NormalizedRegion(0f, topFraction, 1f, bottomFraction)
         return GameDetection(true, region, rows.size, "WinGo history detected (${rows.size} rows).")
     }
