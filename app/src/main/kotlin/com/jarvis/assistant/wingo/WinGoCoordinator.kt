@@ -480,7 +480,7 @@ class WinGoCoordinator(
         ensureReady()
         val context = _state.value.prediction?.pattern?.context ?: return null
         val bits = mutex.withLock { results.map { if (it.number >= 5) 1 else 0 }.toIntArray() }
-        return withContext(Dispatchers.Default) { PatternBacktester.run(bits, context) }
+        return withContext(Dispatchers.Default) { PatternBacktester.runLen(bits, context) }
     }
 
     suspend fun recentResults(count: Int): List<RoundResult> {
