@@ -77,12 +77,28 @@ class WinGoViewModel(application: Application) : AndroidViewModel(application) {
     fun liveAnalysisEnabled(): Boolean = module.settings.liveAnalysisEnabled
     fun savedRegion(): NormalizedRegion? = module.settings.manualRegion
 
-    fun saveRegion(top: Float, bottom: Float) {
-        if (top < bottom) module.settings.manualRegion = NormalizedRegion(0f, top, 1f, bottom)
+    /**
+     * Saves a manual capture region. Returns null on success, or a warning to show the user when the
+     * region is rejected (wrong order, or too short to ever contain the whole history table).
+     */
+    fun saveRegion(top: Float, bottom: Float): String? {
+        if (top >= bottom) return "Top must be above Bottom."
+        if (bottom - top < MIN_REGION_HEIGHT) {
+            return "That region is only ${((bottom - top) * 100).toInt()}% of the screen - too short to " +
+                "show the whole history table. Make it at least ${(MIN_REGION_HEIGHT * 100).toInt()}%."
+        }
+        module.settings.manualRegion = NormalizedRegion(0f, top, 1f, bottom)
+        return null
     }
 
     fun clearRegion() {
         module.settings.manualRegion = null
+    }
+
+    companion object {
+        const val DEFAULT_REGION_TOP = 0.55f
+        const val DEFAULT_REGION_BOTTOM = 0.95f
+        const val MIN_REGION_HEIGHT = 0.15f
     }
 
     fun resetData() {

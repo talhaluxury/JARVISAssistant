@@ -78,6 +78,23 @@ The GitHub Actions workflow `wingo-verify.yml` runs the tests and builds; the ex
 * This module was written without a Kotlin compiler available. Run the CI workflow first and fix any compile message it reports.
 
 
+## "Game screen NOT DETECTED" after adjusting the region sliders
+
+The Top/Bottom sliders shrink the capture area from the edges you drag - dragging Top further right moves the
+top edge DOWN the screen (shrinking from the top), and dragging Bottom further right moves the bottom edge
+further down. If both end up dragged close together (e.g. Top 95%, Bottom 100%), the capture area becomes a
+sliver too short to ever contain the history table, and detection stays stuck on NOT DETECTED even though the
+game is on screen. Saving now refuses a region shorter than 15% of the screen height and explains why; Auto-detect
+resets the sliders back to sane defaults instead of leaving the old numbers on screen. As a safety net, the
+monitor also ignores an already-saved region that is too short and falls back to auto-detecting the table itself.
+
+## Why history pages are never turned automatically
+
+JARVIS does not press the game's own "previous page" control to walk back through history by itself, for the
+same reason it never taps BIG/SMALL: it only ever reads the screen, never drives another app's UI. Turning
+pages yourself and letting JARVIS read whatever appears (see "History pages and missing rounds" above) gets the
+same result - every page you show it gets saved - without JARVIS ever controlling the game.
+
 ## Guarding against a misread period (WinGo)
 
 The coloured digits (0 and 5) are the hardest for OCR to read correctly, and occasionally the same wrong

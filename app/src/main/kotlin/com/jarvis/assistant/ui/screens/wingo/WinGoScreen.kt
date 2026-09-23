@@ -77,9 +77,10 @@ fun WinGoScreen(onBack: () -> Unit, vm: WinGoViewModel = viewModel()) {
     var liveOn by remember { mutableStateOf(vm.liveAnalysisEnabled()) }
     var requireEdge by remember { mutableStateOf(vm.requireVerifiedEdge()) }
     val saved = remember { vm.savedRegion() }
-    var regionTop by remember { mutableStateOf(saved?.top ?: 0.55f) }
-    var regionBottom by remember { mutableStateOf(saved?.bottom ?: 0.95f) }
+    var regionTop by remember { mutableStateOf(saved?.top ?: WinGoViewModel.DEFAULT_REGION_TOP) }
+    var regionBottom by remember { mutableStateOf(saved?.bottom ?: WinGoViewModel.DEFAULT_REGION_BOTTOM) }
     var regionSaved by remember { mutableStateOf(saved != null) }
+    var regionWarning by remember { mutableStateOf<String?>(null) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -160,18 +161,29 @@ fun WinGoScreen(onBack: () -> Unit, vm: WinGoViewModel = viewModel()) {
             SetupStep("3. Open the WinGo game yourself (JARVIS never opens or taps it)", null) {}
             SetupStep("4. Auto-detect the history table", state.screenStatus == ScreenStatus.TRACKING) {}
             SetupStep("5. Adjust the history region if detection is off", regionSaved) {
+                Text(
+                    "Drag Top down and Bottom down to shrink from the BOTTOM of the region, not the top. " +
+                        "The area between them must cover the whole history table.",
+                    color = Muted, fontSize = 10.sp
+                )
                 Text("Top ${Fmt.pct(regionTop.toDouble())}  ·  Bottom ${Fmt.pct(regionBottom.toDouble())}", color = Muted, fontSize = 11.sp)
-                Slider(value = regionTop, onValueChange = { regionTop = it }, valueRange = 0f..0.95f)
-                Slider(value = regionBottom, onValueChange = { regionBottom = it }, valueRange = 0.05f..1f)
+                Slider(value = regionTop, onValueChange = { regionTop = it; regionWarning = null }, valueRange = 0f..0.95f)
+                Slider(value = regionBottom, onValueChange = { regionBottom = it; regionWarning = null }, valueRange = 0.05f..1f)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
-                        if (regionTop < regionBottom) {
-                            vm.saveRegion(regionTop, regionBottom)
-                            regionSaved = true
-                        }
+                        val warning = vm.saveRegion(regionTop, regionBottom)
+                        regionWarning = warning
+                        regionSaved = warning == null
                     }) { Text("Use this region", color = Cyan) }
-                    OutlinedButton(onClick = { vm.clearRegion(); regionSaved = false }) { Text("Auto-detect", color = Muted) }
+                    OutlinedButton(onClick = {
+                        vm.clearRegion()
+                        regionSaved = false
+                        regionWarning = null
+                        regionTop = WinGoViewModel.DEFAULT_REGION_TOP
+                        regionBottom = WinGoViewModel.DEFAULT_REGION_BOTTOM
+                    }) { Text("Auto-detect", color = Muted) }
                 }
+                regionWarning?.let { Text(it, color = Bad, fontSize = 10.sp) }
                 Text("Restart monitoring after changing the region.", color = Muted, fontSize = 10.sp)
             }
             SetupStep("6. Collect verified results", state.historyCount > 0) {}

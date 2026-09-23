@@ -107,7 +107,11 @@ class WinGoMonitorService : Service() {
         val validator = ResultValidator(config)
         val stabilizer = ResultStabilizer(config.confirmations)
 
-        val manual: NormalizedRegion? = settings.manualRegion
+        val savedManual: NormalizedRegion? = settings.manualRegion
+        // A region shorter than this can never show the whole history table - ignore it rather than get
+        // permanently stuck on a sliver that was saved by mistake (e.g. sliders dragged past each other).
+        val manual: NormalizedRegion? = savedManual?.takeIf { it.bottom - it.top >= 0.15f }
+        if (savedManual != null && manual == null) coordinator.setMessage("Saved history region was too small; using auto-detect instead.")
         var region: NormalizedRegion? = manual
         var lastSignature: IntArray? = null
         var lastOcrAt = 0L
