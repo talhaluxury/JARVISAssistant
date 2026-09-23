@@ -127,7 +127,16 @@ data class WinGoConfig(
     val sampleIntervalMs: Long = 1000L,
     val searchIntervalMs: Long = 3000L,
     val forcedRefreshMs: Long = 20_000L,
-    val missesBeforePause: Int = 4
+    val missesBeforePause: Int = 4,
+    /**
+     * While monitoring runs continuously (the previous verified round was very recent), the live period
+     * should advance by only a few numbers each round. A much bigger jump almost always means one digit of
+     * the period was misread (the coloured 0/5 digits are the hardest for OCR) rather than a real skip, so
+     * it is treated as an uncertain reading instead of being trusted.
+     */
+    val maxPlausibleLiveJump: Long = 40L,
+    /** How recent the previous verified round must be for the jump check above to apply. */
+    val liveJumpContinuityMs: Long = 10 * 60_000L
 ) {
     init {
         require(lowThreshold in 0.5..1.0) { "lowThreshold must be within 0.5..1.0" }

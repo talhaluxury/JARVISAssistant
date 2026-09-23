@@ -78,6 +78,17 @@ The GitHub Actions workflow `wingo-verify.yml` runs the tests and builds; the ex
 * This module was written without a Kotlin compiler available. Run the CI workflow first and fix any compile message it reports.
 
 
+## Guarding against a misread period (WinGo)
+
+The coloured digits (0 and 5) are the hardest for OCR to read correctly, and occasionally the same wrong
+digit gets read twice in a row, which used to let one bad period slip past validation and get stored -
+showing up later as a huge, wrong "missing rounds" count (tens of thousands) even though the real history
+was fine. Now: while monitoring has been running continuously (the previous verified round was very
+recent), a period that jumps far more than a normal round-to-round step on the same day is treated as a
+misread and skipped (counted as an "uncertain reading"), not stored. A genuinely large jump is still
+accepted when real time actually passed (app was closed, or you were on another screen) - only an
+implausibly large jump with almost no elapsed time is rejected.
+
 ## Deep history analysis and next-round estimate (WinGo)
 
 The engine now goes well beyond "recent count says BIG":

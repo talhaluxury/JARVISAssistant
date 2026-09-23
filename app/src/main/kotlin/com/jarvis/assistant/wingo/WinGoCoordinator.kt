@@ -170,10 +170,15 @@ class WinGoCoordinator(
         mutex.withLock {
             var backfilled = 0
             var addedLive = 0
+            var rejectedJumps = 0
             for (r in newResults.sortedBy { it.period }) {
-                val newestBefore = results.lastOrNull()?.period
+                val newestBefore = results.lastOrNull()
+                if (newestBefore != null && r.period > newestBefore.period && isImplausibleLiveJump(newestBefore, r)) {
+                    rejectedJumps++
+                    continue
+                }
                 if (!history.insertIfNew(r)) continue // duplicate period: ignored
-                if (newestBefore == null || r.period > newestBefore) {
+                if (newestBefore == null || r.period > newestBefore.period) {
                     handleLiveResultLocked(r)
                     addedLive++
                 } else {
@@ -181,6 +186,7 @@ class WinGoCoordinator(
                     backfilled++
                 }
             }
+            if (rejectedJumps > 0) noteUncertain(rejectedJumps)
             if (addedLive == 0 && backfilled == 0) return@withLock
             browsing = addedLive == 0
             if (backfilled > 0) {
@@ -356,6 +362,23 @@ class WinGoCoordinator(
                 }
             }
         }
+    }
+
+    /**
+     * True when [r] looks like a misread rather than a real result: monitoring never stopped (the previous
+     * verified round was very recent) yet the period jumped far more than a normal round-to-round step, on
+     * the same day. A real absence (app closed, page browsed away) always shows as a large TIME gap too, so
+     * this only catches the case where time barely passed but the period leapt - the signature of a misread
+     * digit, not a skipped round.
+     */
+    private fun isImplausibleLiveJump(previous: RoundResult, r: RoundResult): Boolean {
+        if (PeriodFormat.dayOf(previous.period) != PeriodFormat.dayOf(r.period)) return false
+        val prevValue = previous.period.toLongOrNull() ?: return false
+        val newValue = r.period.toLongOrNull() ?: return false
+        val delta = newValue - prevValue
+        if (delta <= config.maxPlausibleLiveJump) return false
+        val elapsed = r.timestamp - previous.timestamp
+        return elapsed in 0 until config.liveJumpContinuityMs
     }
 
     private fun insertSortedLocked(r: RoundResult) {
