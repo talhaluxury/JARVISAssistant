@@ -165,7 +165,14 @@ class WinGoMonitorService : Service() {
                             if (dataRows == 0) misses++ else misses = 0
                             coordinator.noteUncertain(verdicts.count { it.status == RowStatus.UNCERTAIN })
                             val trusted = verdicts.mapNotNull { if (it.status == RowStatus.TRUSTED) it.result else null }
-                            val confirmed = stabilizer.offer(trusted)
+                            // Every row except the newest one in this read is already a settled, static
+                            // result (the table only ever shows finished rounds) - it doesn't need a second
+                            // OCR pass to confirm it, so it can be saved immediately even on a page you only
+                            // glance at. Only the single newest-looking row might still be the live round
+                            // that is mid-animation, so that one alone goes through the confirmation check.
+                            val newestRow = trusted.maxByOrNull { it.period }
+                            val settledRows = if (newestRow == null) trusted else trusted.filterNot { it === newestRow }
+                            val confirmed = settledRows + (newestRow?.let { stabilizer.offer(listOf(it)) } ?: emptyList())
                             if (confirmed.isNotEmpty()) coordinator.onConfirmedResults(confirmed)
                             val newestVisible = trusted.maxOfOrNull { it.period }
                             if (newestVisible != null) coordinator.onVisiblePeriods(newestVisible)

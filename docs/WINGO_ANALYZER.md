@@ -88,6 +88,15 @@ game is on screen. Saving now refuses a region shorter than 15% of the screen he
 resets the sliders back to sane defaults instead of leaving the old numbers on screen. As a safety net, the
 monitor also ignores an already-saved region that is too short and falls back to auto-detecting the table itself.
 
+## Faster saving while you page through history
+
+Every row on a history page except the very top one is already a finished, static result - it does not need a
+second OCR pass to confirm it, so it is saved the moment it is read cleanly, even if you only glance at the page.
+Only the single newest-looking row in each read still waits for two identical reads, because on the live page
+that row can still be mid-animation. In practice this means paging back quickly now saves most of each page
+immediately; the odd top row that gets missed on a fast flip usually reappears on a neighbouring page later,
+since the page numbers drift by one row with every new round, and gets saved then.
+
 ## Why history pages are never turned automatically
 
 JARVIS does not press the game's own "previous page" control to walk back through history by itself, for the
