@@ -1,0 +1,41 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer ring -->
+    <path
+        android:pathData="M20,54 A34,34 0 1,0 88,54 A34,34 0 1,0 20,54"
+        android:strokeColor="#FF38BDF8"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:strokeAlpha="0.85" />
+
+    <!-- Decorative scan arc (open, reactor-style) -->
+    <path
+        android:pathData="M67,31.5 A26,26 0 1,1 29.6,45.1"
+        android:strokeColor="#FF38BDF8"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- Inner glow ring around the core -->
+    <path
+        android:pathData="M39,54 A15,15 0 1,0 69,54 A15,15 0 1,0 39,54"
+        android:strokeColor="#FF38BDF8"
+        android:strokeWidth="1.5"
+        android:strokeAlpha="0.55"
+        android:fillColor="#00000000" />
+
+    <!-- Core -->
+    <path
+        android:pathData="M45,54 A9,9 0 1,0 63,54 A9,9 0 1,0 45,54"
+        android:fillColor="#FF38BDF8" />
+
+    <!-- Core highlight -->
+    <path
+        android:pathData="M50,54 A4,4 0 1,0 58,54 A4,4 0 1,0 50,54"
+        android:fillColor="#FFFFFFFF"
+        android:fillAlpha="0.9" />
+</vector>

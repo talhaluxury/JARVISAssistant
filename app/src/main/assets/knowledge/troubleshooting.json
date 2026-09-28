@@ -1,0 +1,32 @@
+[
+  {
+    "id": "trouble_app_not_found",
+    "topic": "\"isn't installed on this phone\" when the app is installed",
+    "content": "This means JARVIS's launcher scan didn't find an app whose name matches closely enough to what was heard. It usually happens when speech recognition mis-heard the app name, or the app has no home-screen launcher icon. Saying the app's exact name, or opening it once manually first, usually resolves it.",
+    "keywords": ["isn't installed", "app not found", "couldn't open app"]
+  },
+  {
+    "id": "trouble_phone_control_not_on",
+    "topic": "\"Phone control isn't turned on yet\"",
+    "content": "This means the Accessibility Service permission is off, so JARVIS cannot scroll, go back, tap, type, or automate anything. JARVIS opens the Accessibility settings screen automatically when this happens — the user needs to find JARVIS in the list and switch it on, then try the command again.",
+    "keywords": ["phone control not on", "accessibility not enabled", "turn on phone control"]
+  },
+  {
+    "id": "trouble_ai_not_responding",
+    "topic": "AI features (open-ended questions, plans) not working",
+    "content": "This is almost always one of two things: no AI API key has been added in Settings, or there's no network connection. JARVIS still works offline for direct phone actions (opening apps, alarms, timers, HUD) even when AI reasoning is unavailable — only open-ended conversation and multi-step planning need the AI provider.",
+    "keywords": ["ai not working", "sorry something went wrong", "no api key", "offline"]
+  },
+  {
+    "id": "trouble_wake_word_stopped",
+    "topic": "Wake word stopped responding in the background",
+    "content": "If JARVIS was answering to \"Jarvis\" but stopped after a while with the screen off, Android's battery optimization likely paused the background service. Exempting JARVIS from battery optimization (Settings > Apps > JARVIS > Battery > Unrestricted) keeps the listener alive.",
+    "keywords": ["wake word not working", "stopped listening", "background stopped"]
+  },
+  {
+    "id": "trouble_automation_stuck",
+    "topic": "An automation task keeps failing on the same step",
+    "content": "If the same step fails repeatedly across attempts, the target app most likely changed its screen layout since that step was written, so the visible text/label JARVIS is looking for no longer exists in the same place. JARVIS's learning engine flags a request that fails this way more than once so it can be reviewed rather than silently retried forever.",
+    "keywords": ["automation stuck", "keeps failing", "same step fails", "flagged workflow"]
+  }
+]

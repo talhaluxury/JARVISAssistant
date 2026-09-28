@@ -1,0 +1,26 @@
+[
+  {
+    "id": "automation_what_it_does",
+    "topic": "What the AUTOMATE command does",
+    "content": "AUTOMATE launches an app (if needed) and then carries out a short list of steps — tap a visible label, type into the focused field, wait, scroll, go back — one at a time through the Accessibility Service. It is the most powerful thing JARVIS can do because it can interact with any app's UI, so it always requires the user's explicit yes/no first.",
+    "keywords": ["automate", "automation", "multi step", "tap and type"]
+  },
+  {
+    "id": "automation_why_steps_fail",
+    "topic": "Why an automation step can fail",
+    "content": "A step usually fails for one of three reasons: the visible text/label it was looking for isn't on screen yet (the app hasn't finished loading — JARVIS waits and retries a bounded number of times), the app changed its layout since the step was written, or Screen Automation has been switched off in Settings. JARVIS reports which of these happened rather than a generic failure.",
+    "keywords": ["automation failed", "step failed", "element not found", "couldn't complete"]
+  },
+  {
+    "id": "automation_kill_switch",
+    "topic": "The Screen Automation switch in Settings",
+    "content": "Screen Automation is a separate on/off switch from the Accessibility permission itself. Turning it off blocks tapping, typing, scrolling-in-app, search-in-app, and WhatsApp sending, while still allowing plain navigation like back/home/recents. It's a quick way to disable JARVIS's ability to act inside other apps without revoking the Accessibility permission entirely.",
+    "keywords": ["screen automation off", "kill switch", "disable automation", "settings toggle"]
+  },
+  {
+    "id": "automation_whatsapp_flow",
+    "topic": "How sending a WhatsApp message actually works",
+    "content": "JARVIS opens WhatsApp, finds the named contact's conversation, and types the message into the input field — but does not press Send. It only presses Send after the user says yes to the confirmation prompt. This two-step design means JARVIS can never claim a message was sent before the user actually approved it.",
+    "keywords": ["whatsapp", "send message", "confirm before sending"]
+  }
+]

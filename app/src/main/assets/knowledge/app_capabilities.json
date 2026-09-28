@@ -1,0 +1,26 @@
+[
+  {
+    "id": "capabilities_can_do",
+    "topic": "What JARVIS can do",
+    "content": "JARVIS can open apps and settings, place calls to a dialed number, open the camera/maps/contacts/calendar/clock, set alarms/timers/reminders, adjust volume, share text, control media playback, read the current screen or notifications back, save generated text/code as a real file, control the live-wallpaper HUD, hold conversation, answer questions (with a web search when the answer needs current information), and — with the Accessibility permission and confirmation — automate steps inside other apps such as sending a WhatsApp message.",
+    "keywords": ["what can you do", "jarvis capabilities", "what can jarvis do"]
+  },
+  {
+    "id": "capabilities_cannot_do",
+    "topic": "What JARVIS cannot do",
+    "content": "JARVIS cannot read another app's private data beyond what's visibly on screen, cannot make purchases or enter payment information on the user's behalf, cannot access call logs or SMS content, cannot bypass any Android permission, and cannot act on a destructive or sensitive request without the user's explicit yes/no first.",
+    "keywords": ["what can't jarvis do", "limitations", "cannot"]
+  },
+  {
+    "id": "capabilities_web_search",
+    "topic": "How JARVIS decides to use web search",
+    "content": "JARVIS runs a web search automatically only when a question needs current information it can't reasonably know on its own (news, prices, \"today\", \"who is the current ...\"). It does not search for every question — plain conversation and static facts are answered directly.",
+    "keywords": ["web search", "when does jarvis search", "current information"]
+  },
+  {
+    "id": "capabilities_multi_step",
+    "topic": "Multi-step task planning",
+    "content": "For requests that need more than one action (\"open YouTube, search Coke Studio, then play the first result\"), JARVIS can return a bounded plan of up to 12 validated steps, which the task engine executes one at a time, verifying each step before moving to the next.",
+    "keywords": ["multi step", "plan", "several actions", "agent plan"]
+  }
+]

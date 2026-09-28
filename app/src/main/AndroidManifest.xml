@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Android 11+ restricts which other installed apps this app can even see via
+         PackageManager unless declared here. The plain ACTION_MAIN/CATEGORY_LAUNCHER
+         query used to list "what apps can I open" is supposed to be automatically
+         exempt from this, but some OEM Android skins don't reliably honor that
+         exemption - which is exactly why an installed app like WhatsApp could
+         otherwise be invisible to "open WhatsApp" even though it's on the phone.
+         Redeclaring it explicitly here removes any doubt, and the specific
+         packages below guarantee visibility for very common apps regardless. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.instagram.android" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="com.google.android.gm" />
+        <package android:name="com.android.chrome" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.android.vending" />
+    </queries>
+
+    <!-- Voice input -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Network calls to the AI provider / search API -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Alarms/reminders -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Post the "listening"/status notification while mic is foreground-active -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Auto-start background JARVIS after the phone reboots, if the user turned it on -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Android 12+ Bluetooth state access when the user grants it. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- WinGo Analyzer floating HUD (display over other apps) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application
+        android:name=".JarvisApplication"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.NoActionBar"
+        android:usesCleartextTraffic="false">
+
+        <activity android:name=".remote.RemoteControlActivity" android:exported="false" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Material.NoActionBar">
+            <!-- No LAUNCHER category here on purpose - the launcher icon lives on
+                 the separate MainLauncherAlias below so it can be hidden (disabled)
+                 independently without touching MainActivity itself. MainActivity
+                 stays reachable via the alias, via Settings > Apps, or via the
+                 secret-code receiver even while the icon is hidden. It needs no
+                 plain ACTION_MAIN filter either - explicit-component Intents
+                 (used by SecretCodeReceiver and the alias) don't need one, and
+                 some OEM launchers otherwise treat any exported ACTION_MAIN
+                 activity as pinnable, which let an icon survive hiding. -->
+            <!-- Lets the user pick JARVIS as their phone's Home app -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name=".MainLauncherAlias"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <service
+            android:name=".accessibility.JarvisAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <service
+            android:name=".remote.RemoteScreenService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
+
+        <!-- WinGo Analyzer: read-only screen capture (user-approved MediaProjection) + floating HUD -->
+        <service
+            android:name=".wingo.capture.WinGoMonitorService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
+
+        <service
+            android:name=".wingo.overlay.WinGoOverlayService"
+            android:exported="false" />
+
+        <!-- Quotex Analyzer: read-only chart-price capture + floating HUD (analysis only, no trading) -->
+        <service
+            android:name=".quotex.capture.QuotexMonitorService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
+
+        <service
+            android:name=".quotex.overlay.QuotexOverlayService"
+            android:exported="false" />
+
+        <activity
+            android:name=".quotex.capture.QuotexCaptureConsentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".wingo.capture.WinGoCaptureConsentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name=".remote.RemoteConnectService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
+        <service
+            android:name=".overlay.OverlayService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
+
+        <receiver
+            android:name=".overlay.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Dial *#*#1231#*#* in the phone's own Dialer app to bring JARVIS's
+             icon back and open it if it has been hidden (see AppLock.kt).
+             Support for this varies by phone/dialer app. -->
+        <receiver
+            android:name=".security.SecretCodeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SECRET_CODE" />
+                <data android:scheme="android_secret_code" android:host="1231" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Being an active Device Admin makes Android disable the casual
+             "Uninstall" button for this app in Settings > Apps. -->
+        <receiver
+            android:name=".security.JarvisDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+
+        <service
+            android:name=".notifications.JarvisNotificationListenerService"
+            android:label="JARVIS Notification Access"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".wallpaper.LiveWallpaperService"
+            android:permission="android.permission.BIND_WALLPAPER"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/live_wallpaper" />
+        </service>
+
+    </application>
+
+</manifest>

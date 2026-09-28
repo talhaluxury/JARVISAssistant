@@ -1,0 +1,26 @@
+[
+  {
+    "id": "system_diagnostic_scope",
+    "topic": "What \"run JARVIS diagnostic\" actually checks",
+    "content": "The diagnostic checks AI reasoning availability, the local database, speech recognition, text-to-speech, the Accessibility Service, screen automation, the live wallpaper HUD, network connectivity, permission status, and the task engine's recent success rate — each read from real, current state, never assumed.",
+    "keywords": ["diagnostic", "self check", "system health", "what does diagnostic check"]
+  },
+  {
+    "id": "system_retry_backoff",
+    "topic": "How JARVIS retries a failed step",
+    "content": "The task engine retries a failed step up to three times with an increasing delay between attempts (backoff), rather than retrying instantly forever. If all three attempts fail, the task stops and reports the specific failure instead of looping endlessly.",
+    "keywords": ["retry", "backoff", "how many retries", "task failed"]
+  },
+  {
+    "id": "system_data_storage",
+    "topic": "Where JARVIS stores its data",
+    "content": "Conversations, memories, and task history are stored in a local Room (SQLite) database on the device. The AI provider API key and other sensitive settings are stored separately in Android Keystore-backed EncryptedSharedPreferences. Nothing is uploaded to a JARVIS-run server, because there isn't one — the app talks directly to whichever AI/search provider the user configured.",
+    "keywords": ["data storage", "where is my data", "privacy", "database", "api key storage"]
+  },
+  {
+    "id": "system_task_states",
+    "topic": "The states a task moves through",
+    "content": "A multi-step task moves through CREATED, PLANNING, (WAITING_PERMISSION if confirmation is needed), EXECUTING, VERIFYING each step, RECOVERING if a step needs a retry, and finally COMPLETED, FAILED, or CANCELLED. PAUSED can interrupt it at any point if the user says \"pause\".",
+    "keywords": ["task states", "task status", "recovering", "paused"]
+  }
+]

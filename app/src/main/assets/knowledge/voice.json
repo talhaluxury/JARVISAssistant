@@ -1,0 +1,26 @@
+[
+  {
+    "id": "voice_speech_recognition",
+    "topic": "How JARVIS listens",
+    "content": "JARVIS uses Android's built-in SpeechRecognizer. Whether recognition happens on-device or is sent to the phone's configured speech service depends on the Android OS and device settings, not on JARVIS itself — JARVIS only receives the transcribed text back.",
+    "keywords": ["speech recognition", "how does jarvis listen", "speechrecognizer"]
+  },
+  {
+    "id": "voice_tts_selection",
+    "topic": "How JARVIS's speaking voice is chosen",
+    "content": "JARVIS defaults to a male-sounding system TTS voice the first time it speaks, then remembers whichever voice the user picks afterward in Settings. Available voices depend on what the device's TextToSpeech engine offers.",
+    "keywords": ["voice selection", "tts voice", "change jarvis voice"]
+  },
+  {
+    "id": "voice_barge_in",
+    "topic": "Interrupting JARVIS while it's speaking",
+    "content": "While JARVIS is speaking, it also briefly monitors the microphone's volume level (not its content) so it can immediately stop talking and start listening if the user starts talking over it. This barge-in check is never recorded or sent anywhere.",
+    "keywords": ["interrupt jarvis", "barge in", "talk over jarvis", "stop speaking"]
+  },
+  {
+    "id": "voice_supported_phrasing",
+    "topic": "What kinds of phrasing JARVIS understands",
+    "content": "JARVIS is built to handle short commands, long commands, informal phrasing, and incomplete sentences across English, Urdu, Roman Urdu, Hindi, Punjabi, and Arabic — it does not require an exact command syntax.",
+    "keywords": ["supported languages", "phrasing", "informal commands"]
+  }
+]
