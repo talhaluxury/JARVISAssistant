@@ -185,6 +185,7 @@ class QuotexCoordinator(
     suspend fun onReading(reading: QuotexReading) {
         ensureReady()
         mutex.withLock {
+            _state.update { it.copy(readerNote = reading.note) }
             val name = reading.asset
             if (name != null && name != asset) {
                 settings.lastAsset = name
@@ -196,6 +197,18 @@ class QuotexCoordinator(
                 return@withLock
             }
             addTickLocked(clock(), price)
+        }
+    }
+
+    /** Lets the user type the asset when OCR cannot read the name from the chart. */
+    suspend fun setAssetManually(name: String) {
+        ensureReady()
+        mutex.withLock {
+            if (name != asset) {
+                settings.lastAsset = name
+                initialiseLocked(name)
+            }
+            _state.update { it.copy(message = "Asset set manually to $name.") }
         }
     }
 

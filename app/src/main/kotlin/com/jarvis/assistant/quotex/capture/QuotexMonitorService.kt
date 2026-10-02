@@ -116,8 +116,15 @@ class QuotexMonitorService : Service() {
                 val bottom = settings.regionBottom.coerceIn(top + 0.05f, 1f)
                 val crop = ScreenCaptureManager.crop(frame, NormalizedRegion(0f, top, 1f, bottom))
                 try {
-                    val lines = textReader.read(crop)
-                    val reading = parser.parse(lines, crop.width, crop.height)
+                    val sig = ScreenCaptureManager.signature(crop)
+                    val blank = ((sig.maxOrNull() ?: 0) - (sig.minOrNull() ?: 0)) < 6
+                    val lines = if (blank) emptyList() else textReader.read(crop)
+                    val parsed = parser.parse(lines, crop.width, crop.height)
+                    val reading = if (blank) {
+                        parsed.copy(note = "The captured screen is blank/black. Quotex may block screen capture, or another screen is being shared.")
+                    } else {
+                        parsed
+                    }
                     if (reading.price != null) {
                         misses = 0
                         coordinator.setScreenStatus(ScreenStatus.TRACKING)

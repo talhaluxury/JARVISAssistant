@@ -39,7 +39,9 @@ data class QuotexUiState(
     /** Discipline layer only (section 25) - never affects a real trade, only whether JARVIS surfaces a setup. */
     val risk: RiskSnapshot? = null,
     /** Full-pipeline read (data quality, regime, 10 strategies, lifecycle) - see the quotex.agent package. */
-    val agent: AgentSnapshot? = null
+    val agent: AgentSnapshot? = null,
+    /** Last thing the screen reader reported (why the chart / price / asset was or was not found). */
+    val readerNote: String = ""
 )
 
 data class QuotexAnalytics(

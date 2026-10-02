@@ -300,6 +300,7 @@ class QuotexOverlayService : Service() {
         } else {
             detail.appendLine(state.message ?: p?.waitReason ?: "Collecting price history…")
         }
+        if (state.screenStatus != ScreenStatus.TRACKING && state.readerNote.isNotBlank()) detail.appendLine("READER      ${state.readerNote}")
         state.agent?.let { a ->
             detail.appendLine("AGENT       ${a.report.status.emoji} ${a.report.status.label}")
             detail.appendLine("REGIME      ${a.report.regime.name}   DATA ${a.report.dataQuality.name}")

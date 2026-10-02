@@ -195,6 +195,18 @@ class QuotexViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun setAsset(name: String) {
+        val clean = name.trim().uppercase().replace(Regex("[^A-Z0-9_]"), "")
+        if (clean.length < 3) {
+            module.coordinator.setMessage("Type an asset name like EURUSD_OTC.")
+            return
+        }
+        viewModelScope.launch {
+            module.coordinator.setAssetManually(clean)
+            refreshAnalytics()
+        }
+    }
+
     fun addManualPrice(text: String) {
         val price = text.trim().replace(',', '.').toDoubleOrNull()
         if (price == null || price <= 0.0) {

@@ -19,9 +19,9 @@ data class QuotexReading(
  * position it should have. If anything is ambiguous the answer is null - it never guesses.
  */
 object GridPriceFinder {
-    fun find(labels: List<AxisLabel>, heightTolerance: Float): Double? {
+    fun find(labels: List<AxisLabel>, heightTolerance: Float, minLabels: Int = 5, minGrid: Int = 4): Double? {
         val sorted = labels.distinctBy { it.value }.sortedBy { it.value }
-        if (sorted.size < 5) return null
+        if (sorted.size < minLabels) return null
         val diffs = sorted.zipWithNext { a, b -> b.value - a.value }.sorted()
         val spacing = diffs[diffs.size / 2]
         if (spacing <= 0.0) return null
@@ -47,7 +47,7 @@ object GridPriceFinder {
         if (off.size != 1) return null
         val candidate = off[0]
         val grid = sorted.filter { it.value != candidate.value }
-        if (grid.size < 4) return null
+        if (grid.size < minGrid) return null
         val low = grid.first()
         val high = grid.last()
         if (high.value == low.value) return null
@@ -56,42 +56,119 @@ object GridPriceFinder {
         if (abs(expectedY - candidate.y) > heightTolerance) return null
         return candidate.value
     }
+
+    /**
+     * For charts that only show a few axis numbers (phones): removes each label in turn and asks whether the
+     * rest form an evenly spaced grid. The live price is the one label whose removal leaves a perfect grid
+     * AND which sits off that grid at the right height. Zero or several matches -> null (never a guess).
+     */
+    fun findLeaveOneOut(labels: List<AxisLabel>, heightTolerance: Float, minGrid: Int = 3): Double? {
+        val sorted = labels.distinctBy { it.value }.sortedBy { it.value }
+        if (sorted.size < minGrid + 1) return null
+        var found: AxisLabel? = null
+        for (candidate in sorted) {
+            val grid = sorted.filter { it !== candidate }
+            val diffs = grid.zipWithNext { a, b -> b.value - a.value }
+            if (diffs.isEmpty()) continue
+            val step = diffs.average()
+            if (step <= 0.0) continue
+            if (diffs.any { abs(it - step) > step * 0.12 }) continue
+            val low = grid.first()
+            val high = grid.last()
+            val k = (candidate.value - low.value) / step
+            if (abs(k - round(k)) * step <= step * 0.12) continue // sits on the grid: cannot be told apart
+            if (high.value == low.value) continue
+            val slope = (high.y - low.y) / (high.value - low.value).toFloat()
+            val expectedY = low.y + (candidate.value - low.value).toFloat() * slope
+            if (abs(expectedY - candidate.y) > heightTolerance) continue
+            if (found != null) return null // ambiguous
+            found = candidate
+        }
+        return found?.value
+    }
 }
 
 /** Reads the asset name (top of the chart area) and the live price (right-hand axis) from OCR words. */
 class QuotexScreenParser {
     private val priceRegex = Regex("^\\d{1,6}[.,]\\d{2,6}$")
     private val pairRegex = Regex("([A-Za-z]{3})\\s*/\\s*([A-Za-z]{3})")
+    private val joinedPairRegex = Regex("\\b([A-Za-z]{3})([A-Za-z]{3})\\b")
+    private val currencyCodes = setOf(
+        "EUR", "USD", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD", "SGD", "HKD", "TRY", "ZAR", "MXN", "NOK", "SEK", "PLN",
+        "INR", "BRL", "CNH", "XAU", "XAG", "BTC", "ETH", "LTC", "XRP"
+    )
 
     fun parse(lines: List<OcrLine>, width: Int, height: Int): QuotexReading {
-        if (width <= 0 || height <= 0 || lines.isEmpty()) return QuotexReading(null, null, "No text on screen", 0)
-
-        val topText = lines.filter { it.centerY < height * 0.2f }
-            .sortedWith(compareBy({ it.top }, { it.left }))
-            .joinToString(" ") { it.text }
-        val pair = pairRegex.find(topText)
-        val asset = pair?.let {
-            val base = it.groupValues[1].uppercase() + it.groupValues[2].uppercase()
-            if (topText.contains("OTC", ignoreCase = true)) base + "_OTC" else base
+        if (width <= 0 || height <= 0 || lines.isEmpty()) {
+            return QuotexReading(
+                null, null,
+                "No text read from the screen. Open the Quotex chart and keep it visible; if it is open, Quotex may be blocking screen capture.",
+                0
+            )
         }
+
+        val top = lines.filter { it.centerY < height * 0.30f }.sortedWith(compareBy({ it.top }, { it.left }))
+        val topText = top.joinToString(" ") { it.text }
+        val asset = findAsset(top, topText)
 
         val labels = ArrayList<AxisLabel>()
         val heights = ArrayList<Int>()
         for (line in lines) {
             val centerX = (line.left + line.right) / 2f
-            if (centerX < width * 0.72f) continue
-            val text = line.text.trim()
+            if (centerX < width * 0.65f) continue
+            val text = line.text.trim().filter { it.isDigit() || it == '.' || it == ',' }
             if (!priceRegex.matches(text)) continue
             val value = text.replace(',', '.').toDoubleOrNull() ?: continue
             labels.add(AxisLabel(value, line.centerY))
             heights.add(line.height.coerceAtLeast(1))
         }
-        if (labels.size < 5) {
-            return QuotexReading(null, asset, "Only ${labels.size} price-axis labels readable", labels.size)
+        val assetNote = if (asset == null) "asset name not found" else "asset $asset"
+        if (labels.size < 4) {
+            return QuotexReading(
+                null, asset,
+                "Only ${labels.size} price-axis numbers readable (need 4+), $assetNote. Show the chart's right-hand price scale, or adjust the screen region in settings.",
+                labels.size
+            )
         }
         val medianHeight = heights.sorted()[heights.size / 2]
-        val price = GridPriceFinder.find(labels, medianHeight * 1.5f)
-        val note = if (price == null) "Live price label not identified" else "OK"
+        val tolerance = medianHeight * 1.5f
+        var price = GridPriceFinder.find(labels, tolerance)
+        var relaxed = false
+        if (price == null) {
+            price = GridPriceFinder.findLeaveOneOut(labels, tolerance)
+            relaxed = price != null
+        }
+        val note = when {
+            price == null -> "Read ${labels.size} axis numbers but could not tell which one is the live price, $assetNote."
+            relaxed -> "OK (few axis numbers), $assetNote"
+            else -> "OK, $assetNote"
+        }
         return QuotexReading(price, asset, note, labels.size)
+    }
+
+    private fun findAsset(top: List<OcrLine>, topText: String): String? {
+        val otc = topText.contains("OTC", ignoreCase = true)
+        fun tag(base: String) = if (otc) base + "_OTC" else base
+
+        pairRegex.find(topText)?.let {
+            return tag(it.groupValues[1].uppercase() + it.groupValues[2].uppercase())
+        }
+        for (m in joinedPairRegex.findAll(topText)) {
+            val a = m.groupValues[1].uppercase()
+            val b = m.groupValues[2].uppercase()
+            if (a in currencyCodes && b in currencyCodes && a != b) return tag(a + b)
+        }
+        // Non-pair assets (stocks, commodities): the words just left of the "(OTC)" tag on the same row.
+        val otcLine = top.firstOrNull { it.text.contains("OTC", ignoreCase = true) } ?: return null
+        val inline = otcLine.text.substringBefore("(", "").filter { it.isLetter() }
+        if (inline.length >= 3) return inline.uppercase() + "_OTC"
+        val rowTolerance = maxOf(otcLine.height, 20)
+        val words = top
+            .filter { abs(it.centerY - otcLine.centerY) <= rowTolerance && it.right <= otcLine.left + 4 }
+            .sortedBy { it.left }
+            .map { it.text.trim('(', ')', ' ') }
+            .filter { w -> w.length >= 3 && w.all { c -> c.isLetter() } && !w.equals("OTC", ignoreCase = true) }
+        val name = words.takeLast(2).joinToString("") { it.uppercase() }
+        return if (name.isNotEmpty()) name + "_OTC" else null
     }
 }

@@ -142,6 +142,19 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
             StatusLine("Candles stored", "${state.candleCount} (${candleSeconds}s each)", state.candleCount >= 150)
             StatusLine("Unreadable ticks skipped", state.unreadableTicks.toString(), true)
             state.message?.let { Text(it, color = Warn, fontSize = 11.sp) }
+            if (state.screenStatus != ScreenStatus.TRACKING && state.readerNote.isNotBlank()) {
+                Text("Reader: ${state.readerNote}", color = Muted, fontSize = 10.sp)
+            }
+            var assetInput by remember { mutableStateOf("") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = assetInput, onValueChange = { assetInput = it }, singleLine = true,
+                    label = { Text("Asset (manual) e.g. EURUSD_OTC", fontSize = 11.sp) },
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { vm.setAsset(assetInput) }) { Text("SET") }
+            }
         }
 
         Panel("LIVE") {
