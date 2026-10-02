@@ -95,3 +95,32 @@ class QuotexPhoneLayoutTest {
         assertEquals(1.12417, reading.price!!, 1e-12)
     }
 }
+
+class QuotexSelfScreenTest {
+    private fun word(text: String, left: Int, centerY: Int) = OcrLine(text, left, centerY - 18, left + 130, centerY + 18, 0.95f)
+
+    @Test
+    fun jarvisOwnScreenIsNeverReadAsAChart() {
+        val lines = listOf(
+            word("AGENT", 40, 260), word("STATUS", 250, 260),
+            word("Asset", 40, 430), word("ASSET_OTC", 800, 430),
+            word("1.12500", 900, 600), word("1.12480", 900, 700), word("1.12460", 900, 800), word("1.12440", 900, 900)
+        )
+        val reading = QuotexScreenParser().parse(lines, 1080, 2000)
+        assertNull(reading.price)
+        assertNull(reading.asset)
+        assertTrue(reading.note.contains("own screen"))
+    }
+
+    @Test
+    fun otcOnAnotherRowDoesNotTurnARegularPairIntoOtc() {
+        val lines = listOf(word("EUR/USD", 130, 1800), word("88%", 300, 1800), word("OTC", 100, 300))
+        assertEquals("EURUSD", QuotexScreenParser().parse(lines, 1080, 2000).asset)
+    }
+
+    @Test
+    fun uiWordsAreNotMistakenForAnAssetName() {
+        val lines = listOf(word("Asset", 20, 45), word("(OTC)", 300, 45))
+        assertNull(QuotexScreenParser().parse(lines, 1080, 2000).asset)
+    }
+}

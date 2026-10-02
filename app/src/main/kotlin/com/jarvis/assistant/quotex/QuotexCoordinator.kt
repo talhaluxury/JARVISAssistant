@@ -68,6 +68,8 @@ class QuotexCoordinator(
     private val pendingStrategyCalls = HashMap<Int, List<Pair<String, QuotexDecision>>>()
     /** Room journal row id + predicted direction, awaiting its outcome, keyed by the resolving candle index. */
     private val pendingJournal = HashMap<Int, Pair<Long, QuotexDecision>>()
+    private var candidateAsset: String? = null
+    private var candidateHits = 0
     private var signalStateMachine = SignalStateMachine()
     private var riskEngine = com.jarvis.assistant.quotex.risk.RiskEngine(settings.riskConfig(), clock)
     private val agentJournal = QuotexJournal(agentJournalStore)
@@ -188,8 +190,17 @@ class QuotexCoordinator(
             _state.update { it.copy(readerNote = reading.note) }
             val name = reading.asset
             if (name != null && name != asset) {
-                settings.lastAsset = name
-                initialiseLocked(name)
+                // Switching asset wipes the candle history, so one misread word must never trigger it.
+                if (name == candidateAsset) candidateHits++ else { candidateAsset = name; candidateHits = 1 }
+                if (candidateHits >= ASSET_SWITCH_HITS) {
+                    candidateAsset = null
+                    candidateHits = 0
+                    settings.lastAsset = name
+                    initialiseLocked(name)
+                }
+            } else if (name == asset) {
+                candidateAsset = null
+                candidateHits = 0
             }
             val price = reading.price
             if (price == null) {
@@ -208,6 +219,8 @@ class QuotexCoordinator(
                 settings.lastAsset = name
                 initialiseLocked(name)
             }
+            candidateAsset = null
+            candidateHits = 0
             _state.update { it.copy(message = "Asset set manually to $name.") }
         }
     }
@@ -498,4 +511,8 @@ class QuotexCoordinator(
     }
 
     fun currentConfig(): QuotexConfig = config
+
+    private companion object {
+        const val ASSET_SWITCH_HITS = 3
+    }
 }

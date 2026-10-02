@@ -136,7 +136,7 @@ class QuotexOverlayService : Service() {
             setPadding(dp(12), dp(8), dp(12), dp(10))
             background = rounded(BG, CYAN, 12)
             visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(dp(280), LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(dp(PANEL_WIDTH_DP), LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
         val header = LinearLayout(this).apply {
@@ -229,8 +229,16 @@ class QuotexOverlayService : Service() {
         render(lastState)
     }
 
+    /** Furthest right the overlay may sit: the chart's price scale (right ~16% of the screen) must stay visible to the reader. */
+    private fun maxOverlayX(): Int {
+        val widthPx = resources.displayMetrics.widthPixels
+        val overlayWidth = dp(if (expanded) PANEL_WIDTH_DP else PILL_WIDTH_DP)
+        return ((widthPx * 0.84f).toInt() - overlayWidth).coerceAtLeast(0)
+    }
+
     private fun toggle() {
         expanded = !expanded
+        params.x = params.x.coerceAtMost(maxOverlayX())
         panel.visibility = if (expanded) View.VISIBLE else View.GONE
         pill.visibility = if (expanded) View.GONE else View.VISIBLE
         if (!expanded) setWindowFocusable(false)
@@ -390,7 +398,7 @@ class QuotexOverlayService : Service() {
                     if (abs(dx) > dp(6) || abs(dy) > dp(6)) moved = true
                     if (moved) {
                         val metrics = resources.displayMetrics
-                        params.x = (startX + dx).coerceIn(0, (metrics.widthPixels - dp(60)).coerceAtLeast(0))
+                        params.x = (startX + dx).coerceIn(0, maxOverlayX())
                         params.y = (startY + dy).coerceIn(0, (metrics.heightPixels - dp(60)).coerceAtLeast(0))
                         updateLayout()
                     }
@@ -402,6 +410,8 @@ class QuotexOverlayService : Service() {
     }
 
     companion object {
+        private const val PANEL_WIDTH_DP = 220
+        private const val PILL_WIDTH_DP = 160
         private const val ACTION_SHOW = "com.jarvis.assistant.quotex.overlay.SHOW"
         private const val ACTION_HIDE = "com.jarvis.assistant.quotex.overlay.HIDE"
         private val CYAN = Color.parseColor("#38BDF8")

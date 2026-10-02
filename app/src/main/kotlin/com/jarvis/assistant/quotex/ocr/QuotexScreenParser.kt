@@ -110,6 +110,15 @@ class QuotexScreenParser {
         // The asset name can be at the top (web / tablet) or in the bottom trade panel (phone app): search it all.
         val textLines = lines.sortedWith(compareBy({ it.top }, { it.left }))
         val allText = textLines.joinToString(" ") { it.text }
+        // JARVIS's own app screen is on display (not the broker's chart): reading it would invent assets and prices.
+        val lettersOnly = allText.uppercase().filter { it.isLetter() }
+        if ("AGENTSTATUS" in lettersOnly || "QUOTEXANALYZER" in lettersOnly) {
+            return QuotexReading(
+                null, null,
+                "JARVIS's own screen is showing, not the Quotex chart. Open Quotex and use the floating overlay instead of this screen.",
+                0
+            )
+        }
         val asset = findAsset(textLines, allText)
 
         val labels = ArrayList<AxisLabel>()
@@ -158,32 +167,48 @@ class QuotexScreenParser {
         return QuotexReading(price, asset, note, labels.size)
     }
 
-    private fun findAsset(top: List<OcrLine>, topText: String): String? {
-        val otc = topText.contains("OTC", ignoreCase = true)
-        fun tag(base: String) = if (otc) base + "_OTC" else base
+    private val notAssetWords = setOf(
+        "ASSET", "SIGNAL", "QUOTEX", "JARVIS", "DEPOSIT", "TRADE", "TRADES", "BUY", "SELL", "TIMER", "PAYOUT", "INVESTMENT",
+        "SWITCH", "PENDING", "LIVE", "DEMO", "WAIT", "CHAT", "WHY", "ACCURACY", "BACKTEST", "ANALYSIS", "AGENT", "REGIME",
+        "TREND", "BALANCE", "BONUS", "UTC"
+    )
 
-        val slashPairs = pairRegex.findAll(topText).toList()
+    private fun otcNear(anchor: OcrLine?, lines: List<OcrLine>): Boolean {
+        if (anchor == null) return false
+        val tolerance = maxOf(anchor.height, 24) * 1.5f
+        return lines.any { it.text.contains("OTC", ignoreCase = true) && abs(it.centerY - anchor.centerY) <= tolerance }
+    }
+
+    private fun findAsset(lines: List<OcrLine>, text: String): String? {
+        // "OTC" only counts when it sits on the same row as the asset name - not anywhere on the screen.
+        fun tagged(a: String, b: String): String {
+            val anchor = lines.firstOrNull { it.text.uppercase().contains(a) }
+            return if (otcNear(anchor, lines)) a + b + "_OTC" else a + b
+        }
+
+        val slashPairs = pairRegex.findAll(text).toList()
         val known = slashPairs.firstOrNull {
             it.groupValues[1].uppercase() in currencyCodes && it.groupValues[2].uppercase() in currencyCodes
         }
-        (known ?: slashPairs.firstOrNull())?.let {
-            return tag(it.groupValues[1].uppercase() + it.groupValues[2].uppercase())
-        }
-        for (m in joinedPairRegex.findAll(topText)) {
+        (known ?: slashPairs.firstOrNull())?.let { return tagged(it.groupValues[1].uppercase(), it.groupValues[2].uppercase()) }
+
+        for (m in joinedPairRegex.findAll(text)) {
             val a = m.groupValues[1].uppercase()
             val b = m.groupValues[2].uppercase()
-            if (a in currencyCodes && b in currencyCodes && a != b) return tag(a + b)
+            if (a in currencyCodes && b in currencyCodes && a != b) return tagged(a, b)
         }
         // Non-pair assets (stocks, commodities): the words just left of the "(OTC)" tag on the same row.
-        val otcLine = top.firstOrNull { it.text.contains("OTC", ignoreCase = true) } ?: return null
+        val otcLine = lines.firstOrNull { it.text.contains("OTC", ignoreCase = true) } ?: return null
         val inline = otcLine.text.substringBefore("(", "").filter { it.isLetter() }
-        if (inline.length >= 3) return inline.uppercase() + "_OTC"
+        if (inline.length >= 3 && inline.uppercase() !in notAssetWords) return inline.uppercase() + "_OTC"
         val rowTolerance = maxOf(otcLine.height, 20)
-        val words = top
+        val words = lines
             .filter { abs(it.centerY - otcLine.centerY) <= rowTolerance && it.right <= otcLine.left + 4 }
             .sortedBy { it.left }
             .map { it.text.trim('(', ')', ' ') }
-            .filter { w -> w.length >= 3 && w.all { c -> c.isLetter() } && !w.equals("OTC", ignoreCase = true) }
+            .filter { w ->
+                w.length >= 3 && w.all { c -> c.isLetter() } && !w.equals("OTC", ignoreCase = true) && w.uppercase() !in notAssetWords
+            }
         val name = words.takeLast(2).joinToString("") { it.uppercase() }
         return if (name.isNotEmpty()) name + "_OTC" else null
     }
