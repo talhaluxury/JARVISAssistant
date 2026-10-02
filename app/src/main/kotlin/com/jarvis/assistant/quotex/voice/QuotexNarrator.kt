@@ -94,5 +94,29 @@ object QuotexNarrator {
         }
     }
 
-    const val HELP = "Try: signal, why, accuracy, price, confluence, strategy performance, risk, backtest, confluence backtest."
+    fun journalSummary(entries: List<com.jarvis.assistant.quotex.data.JournalEntry>, label: String): String {
+        if (entries.isEmpty()) return "$label: no signals logged yet."
+        val resolved = entries.filter { it.resolved }
+        val wins = resolved.count { it.correct == true }
+        val header = if (resolved.isEmpty()) {
+            "$label: ${entries.size} signals logged, none resolved yet."
+        } else {
+            "$label: $wins/${resolved.size} correct (${entries.size - resolved.size} still pending)."
+        }
+        val lines = entries.take(10).joinToString("\n") { e ->
+            val status = when (e.correct) { true -> "✓"; false -> "✕"; null -> "…" }
+            "$status ${e.direction} ${e.asset} @ ${Fmt.pct(e.confidence)} (${e.confluenceQuality})"
+        }
+        return "$header\n$lines"
+    }
+
+    fun explainFailure(entry: com.jarvis.assistant.quotex.data.JournalEntry?): String {
+        if (entry == null) return "No resolved losing signal on record yet."
+        return "Last failed setup: ${entry.direction} on ${entry.asset}, ${Fmt.pct(entry.confidence)} confidence, " +
+            "${entry.agree}/${entry.totalModels} models agreeing, trend ${entry.trend}, volatility ${entry.volatility}, " +
+            "confluence ${entry.confluenceQuality}.\nAt the time, JARVIS said: \"${entry.reasonSummary}\"\n" +
+            "Actual result: ${entry.actualDirection}. Even a well-supported setup can still lose - this is one resolved case, not a pattern."
+    }
+
+    const val HELP = "Try: signal, why, accuracy, price, confluence, strategy performance, risk, today's performance, last setups, why did it fail, backtest, confluence backtest, why no trade, should I wait, explain, current setup, agent backtest."
 }

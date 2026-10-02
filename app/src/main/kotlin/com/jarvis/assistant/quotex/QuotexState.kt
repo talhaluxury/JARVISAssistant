@@ -1,5 +1,6 @@
 package com.jarvis.assistant.quotex
 
+import com.jarvis.assistant.quotex.agent.AgentSnapshot
 import com.jarvis.assistant.quotex.analysis.ConfluenceResult
 import com.jarvis.assistant.quotex.analysis.QuotexBacktestReport
 import com.jarvis.assistant.quotex.analysis.QuotexPrediction
@@ -36,7 +37,9 @@ data class QuotexUiState(
     val confluence: ConfluenceResult? = null,
     val signalState: SignalState = SignalState.SCANNING,
     /** Discipline layer only (section 25) - never affects a real trade, only whether JARVIS surfaces a setup. */
-    val risk: RiskSnapshot? = null
+    val risk: RiskSnapshot? = null,
+    /** Full-pipeline read (data quality, regime, 10 strategies, lifecycle) - see the quotex.agent package. */
+    val agent: AgentSnapshot? = null
 )
 
 data class QuotexAnalytics(

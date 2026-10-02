@@ -20,7 +20,7 @@ class QuotexVoiceController(
         coordinatorProvider().ensureReady()
         val chat = chatProvider()
         val question = t.replace("quotex", " ").trim()
-        return if ("analy" in t || ("signal" in t && "why" !in t)) chat.spokenSignal() else chat.answer(question)
+        return if ("analy" in t || "scan" in t || ("signal" in t && "why" !in t)) chat.spokenSignal() else chat.answer(question)
     }
 
     private fun normalize(text: String): String {

@@ -3,13 +3,16 @@ package com.jarvis.assistant.quotex
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import com.jarvis.assistant.quotex.agent.FileJournalStore
 import com.jarvis.assistant.quotex.capture.QuotexCaptureConsentActivity
 import com.jarvis.assistant.quotex.capture.QuotexMonitorService
 import com.jarvis.assistant.quotex.data.QuotexCandleRepository
+import com.jarvis.assistant.quotex.data.QuotexJournalRepository
 import com.jarvis.assistant.quotex.data.QuotexDatabase
 import com.jarvis.assistant.quotex.overlay.QuotexOverlayService
 import com.jarvis.assistant.quotex.voice.QuotexChatController
 import com.jarvis.assistant.quotex.voice.QuotexVoiceController
+import java.io.File
 
 /** Start/stop entry points shared by the screen, the overlay and voice commands. */
 class QuotexControls(private val context: Context) {
@@ -41,7 +44,8 @@ class QuotexModule(context: Context) {
 
     val settings: QuotexSettings by lazy { QuotexSettings(appContext) }
     val repository: QuotexCandleRepository by lazy { QuotexCandleRepository(database.candleDao()) }
-    val coordinator: QuotexCoordinator by lazy { QuotexCoordinator(repository, settings) }
+    val journal: QuotexJournalRepository by lazy { QuotexJournalRepository(database.journalDao()) }
+    val coordinator: QuotexCoordinator by lazy { QuotexCoordinator(repository, settings, tradeJournal = journal, agentJournalStore = FileJournalStore(File(appContext.filesDir, "quotex_journal.tsv"))) }
     val chat: QuotexChatController by lazy { QuotexChatController(coordinator) }
     val controls: QuotexControls by lazy { QuotexControls(appContext) }
     val voice: QuotexVoiceController by lazy { QuotexVoiceController({ coordinator }, { chat }, controls) }

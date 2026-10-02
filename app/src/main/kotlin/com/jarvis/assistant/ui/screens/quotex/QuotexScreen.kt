@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jarvis.assistant.quotex.agent.AgentStatus
+import com.jarvis.assistant.quotex.agent.ExplanationEngine
 import com.jarvis.assistant.quotex.analysis.QuotexBacktestReport
 import com.jarvis.assistant.quotex.analysis.SetupQuality
 import com.jarvis.assistant.quotex.capture.QuotexCaptureConsentActivity
@@ -93,6 +95,7 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
             if (event == Lifecycle.Event.ON_RESUME) {
                 overlayAllowed = Settings.canDrawOverlays(context)
                 vm.refreshAnalytics()
+                vm.refreshJournal()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -160,6 +163,31 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
                 }
             }
             state.lastOutcome?.let { Mono("Last resolved call: " + if (it.correct) "✓ correct" else "✕ wrong") }
+        }
+
+        Panel("TRADING INTELLIGENCE (FULL PIPELINE)") {
+            val agent = state.agent
+            if (agent == null) {
+                Text("No agent read yet - keep collecting price history.", color = Muted, fontSize = 12.sp)
+            } else {
+                val r = agent.report
+                val statusColor = when (r.status) {
+                    AgentStatus.SETUP_DETECTED -> Good
+                    AgentStatus.NO_TRADE, AgentStatus.DATA_UNCERTAIN -> Warn
+                    else -> Cyan
+                }
+                Text(
+                    "${r.status.emoji} ${r.status.label}", color = statusColor,
+                    fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace
+                )
+                Mono("Mode ${agent.mode.name}  ·  Data ${r.dataQuality.name}  ·  Regime ${r.regime.name}")
+                Mono("Session ${r.session.name}  ·  News ${r.newsRisk.name}  ·  Volatility ${r.volatility.name}")
+                Mono("Conditions ${r.conditionsMet}/${r.conditionsTotal}  ·  Signal ${agent.lifecycle.state.name}")
+                for (c in r.checks) {
+                    Mono((if (c.passed) "✓ " else "✕ ") + c.step + ": " + c.detail)
+                }
+                Text(ExplanationEngine.explain(r), color = Muted, fontSize = 10.sp)
+            }
         }
 
         Panel("CONFLUENCE / SETUP") {
@@ -335,6 +363,27 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
                 OutlinedButton(onClick = { vm.setRiskPaused(true) }) { Text("Pause setups", color = Warn) }
                 OutlinedButton(onClick = { vm.setRiskPaused(false) }) { Text("Resume setups", color = Cyan) }
             }
+        }
+
+        Panel("TRADE JOURNAL") {
+            val today by vm.journalToday.collectAsState()
+            val recent by vm.journalRecent.collectAsState()
+            val todayResolved = today.filter { it.resolved }
+            val todayWins = todayResolved.count { it.correct == true }
+            Mono(
+                if (today.isEmpty()) "No signals logged today."
+                else "Today: $todayWins/${todayResolved.size} correct (${today.size - todayResolved.size} pending)"
+            )
+            Text("Last ${recent.size} logged signals:", color = Muted, fontSize = 11.sp)
+            if (recent.isEmpty()) {
+                Text("Nothing logged yet - a row is saved every time a real signal is surfaced.", color = Muted, fontSize = 10.sp)
+            } else {
+                for (e in recent.take(10)) {
+                    val status = when (e.correct) { true -> "✓"; false -> "✕"; null -> "…" }
+                    Mono("$status ${e.direction} ${e.asset} @ ${Fmt.pct(e.confidence)} · ${e.confluenceQuality}")
+                }
+            }
+            OutlinedButton(onClick = { vm.refreshJournal() }) { Text("Refresh journal", color = Cyan) }
         }
 
         Panel("TEST MODE (OFFLINE, SEPARATE FROM LIVE DATA)") {

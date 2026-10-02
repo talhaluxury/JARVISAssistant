@@ -122,6 +122,32 @@ calls (only real, gated signals - not every raw lean) as wins/losses at that fix
 - **Tests**: `RiskEngineTest.kt` (fixed stake, both pause triggers, freeze-while-paused, next-day rollover,
   resume semantics, deliberately raising the limit, invalid config).
 
+## This round: Trade Journal (section 27)
+
+Every real signal JARVIS surfaces (not every raw lean - only when `prediction.isSignal` is true) is saved the
+moment it is shown, with its full context **frozen at that instant**: asset, timeframe (candle length +
+expiry), direction, confidence, model agreement, trend, volatility, the confluence quality and signal state
+at the time, the entry price, and the plain-language reason JARVIS gave. It is a separate table
+(`quotex_journal`) added via a proper Room migration (version 1→2) - existing candle history is untouched,
+nothing is wiped on update.
+
+Once the signal's expiry passes, the same row is updated with the actual direction and whether it was
+correct - never a new row, never a silent rewrite of what was originally said.
+
+**Chat/voice**: "today's performance", "show my last 20 setups" (or "last N setups"), "journal", and "why did
+this fail" / "why did it fail" - the failure explainer quotes the original `reasonSummary` verbatim rather
+than reconstructing a story afterward, and always closes on "this is one resolved case, not a pattern" so a
+single loss is never over-read.
+
+**UI**: a new **TRADE JOURNAL** panel on the Quotex screen shows today's resolved win/loss count and the most
+recent logged signals with their outcome marker.
+
+**Tests**: `JournalTest.kt` covers the narrator's summary wording (empty, all-pending, mixed win/loss) and the
+failure explainer (quotes the frozen reasoning, never says "guaranteed" or implies a loss won't repeat). The
+Room entity/DAO/migration itself is not unit-tested here (this project has no instrumented-test setup), so
+please check on a device that: (a) a signal appears in the journal the moment it is surfaced, (b) it resolves
+correctly after its expiry, and (c) upgrading from a build before this change does not lose candle history.
+
 ## What this does NOT include (from the 40-section brief)
 
 This was an intentionally scoped increment, not the full brief. Left out this round, and why:
@@ -132,8 +158,8 @@ This was an intentionally scoped increment, not the full brief. Left out this ro
   does evidence-weighted combination with a state machine of sorts (WAIT → candidate → signal, tracked via
   `RoundPhase`-equivalent for Quotex is not yet built the way WinGo's is); a full named-strategy library on
   top would be a large, separate piece of work best done as its own reviewable step.
-- **Trade journal, session analysis, news filter (23-24, 27)** — genuinely new subsystems each;
-  none exist yet for Quotex (the risk engine is now built, see above). The existing backtest report already shows break-even accuracy and simulated
+- **Session analysis, news filter (23-24)** — genuinely new subsystems each; none exist yet for Quotex
+  (the risk engine and trade journal are now built, see above). The existing backtest report already shows break-even accuracy and simulated
   P/L, and CSV export/import already gives a data trail, but a dedicated risk engine and journal UI are not
   built. News/economic-calendar data has no reliable local source in this app, so per the brief's own
   instruction ("do not fabricate news data if no reliable source is available") this is skipped rather than
@@ -147,3 +173,10 @@ This was an intentionally scoped increment, not the full brief. Left out this ro
 
 Already satisfied by design: the module never asks for or stores a Quotex password, 2FA code, OTP, or any
 credential, and it never touches Quotex's own login flow — it only reads prices and candles from the screen.
+
+
+## Trading Intelligence Agent
+
+The full agent pipeline (data validation, multi-timeframe, price action, regime, 10 strategies, walk-forward
+backtest, news risk, modes, explanations) lives in `quotex/agent/` - see `QUOTEX_AGENT.md`. It runs alongside the
+Room trade journal above.

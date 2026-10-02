@@ -1,5 +1,15 @@
 package com.jarvis.assistant.quotex
 
+import com.jarvis.assistant.quotex.agent.AgentBacktestReport
+import com.jarvis.assistant.quotex.agent.AgentBacktester
+import com.jarvis.assistant.quotex.agent.AgentConfig
+import com.jarvis.assistant.quotex.agent.AgentMode
+import com.jarvis.assistant.quotex.agent.AgentRuntime
+import com.jarvis.assistant.quotex.agent.AgentSnapshot
+import com.jarvis.assistant.quotex.agent.InMemoryJournalStore
+import com.jarvis.assistant.quotex.agent.JournalEntry
+import com.jarvis.assistant.quotex.agent.JournalStore
+import com.jarvis.assistant.quotex.agent.QuotexJournal
 import com.jarvis.assistant.quotex.analysis.CandleBuilder
 import com.jarvis.assistant.quotex.analysis.CandleRuns
 import com.jarvis.assistant.quotex.analysis.ConfluenceEngine
@@ -26,6 +36,7 @@ import com.jarvis.assistant.trading.QuotexDecision
 import com.jarvis.assistant.wingo.ScreenStatus
 import com.jarvis.assistant.wingo.analysis.CallOutcome
 import com.jarvis.assistant.wingo.analysis.PerformanceAnalyzer
+import com.jarvis.assistant.wingo.domain.Fmt
 import com.jarvis.assistant.wingo.domain.BigSmall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,7 +55,9 @@ import kotlin.math.abs
 class QuotexCoordinator(
     private val repository: QuotexCandleRepository,
     private val settings: QuotexSettings,
-    private val clock: () -> Long = { System.currentTimeMillis() }
+    private val clock: () -> Long = { System.currentTimeMillis() },
+    private val tradeJournal: com.jarvis.assistant.quotex.data.QuotexJournalRepository? = null,
+    agentJournalStore: JournalStore = InMemoryJournalStore()
 ) {
     private val mutex = Mutex()
     private var config: QuotexConfig = settings.config()
@@ -53,8 +66,21 @@ class QuotexCoordinator(
     private var strategyTrackers: Map<String, StrategyPerformanceTracker> = defaultStrategies().associate { it.name to StrategyPerformanceTracker() }
     /** Strategy calls awaiting their outcome, keyed by the candle index at which they resolve. */
     private val pendingStrategyCalls = HashMap<Int, List<Pair<String, QuotexDecision>>>()
+    /** Room journal row id + predicted direction, awaiting its outcome, keyed by the resolving candle index. */
+    private val pendingJournal = HashMap<Int, Pair<Long, QuotexDecision>>()
     private var signalStateMachine = SignalStateMachine()
     private var riskEngine = com.jarvis.assistant.quotex.risk.RiskEngine(settings.riskConfig(), clock)
+    private val agentJournal = QuotexJournal(agentJournalStore)
+
+    private fun buildAgentConfig(): AgentConfig = AgentConfig(
+        candleSeconds = config.candleSeconds, expiryCandles = config.expiryCandles, minCandles = config.minCandlesForSignal,
+        modelCandleCap = config.modelCandleCap, breakEven = config.breakEvenAccuracy,
+        requireVerifiedEdge = config.requireVerifiedEdge, edgeMinSamples = config.edgeMinSamples,
+        edgeZThreshold = config.edgeZThreshold
+    )
+
+    /** Section 26: SIMULATION until the user turns live analysis on. */
+    private var agentRuntime = AgentRuntime(buildAgentConfig(), agentJournal)
     private var builder = CandleBuilder(config.candleSeconds)
     private val candles = ArrayList<Candle>()
     private val liveOutcomes = ArrayList<CallOutcome>()
@@ -103,12 +129,14 @@ class QuotexCoordinator(
     suspend fun resetData() {
         mutex.withLock {
             repository.clear()
+            tradeJournal?.clear()
             candles.clear()
             liveOutcomes.clear()
             engine = QuotexEngine(config)
             signalStateMachine = SignalStateMachine()
             strategyTrackers = defaultStrategies().associate { it.name to StrategyPerformanceTracker() }
             pendingStrategyCalls.clear()
+            pendingJournal.clear()
             riskEngine = com.jarvis.assistant.quotex.risk.RiskEngine(settings.riskConfig(), clock)
             builder = CandleBuilder(config.candleSeconds)
             lastPrice = null
@@ -123,6 +151,7 @@ class QuotexCoordinator(
 
     private suspend fun initialiseLocked(forAsset: String?) {
         config = settings.config()
+        agentRuntime = AgentRuntime(buildAgentConfig(), agentJournal, mode = agentRuntime.mode)
         riskEngine.updateConfig(settings.riskConfig())
         asset = forAsset
         builder = CandleBuilder(config.candleSeconds)
@@ -132,6 +161,7 @@ class QuotexCoordinator(
         signalStateMachine = SignalStateMachine()
         strategyTrackers = defaultStrategies().associate { it.name to StrategyPerformanceTracker() }
         pendingStrategyCalls.clear()
+        pendingJournal.clear()
         if (forAsset != null) {
             val stored = repository.latestAscending(forAsset, config.maxCandlesKept)
             candles.addAll(CandleRuns.contiguousTail(stored, config.candleMs))
@@ -204,6 +234,7 @@ class QuotexCoordinator(
             candles.clear()
             engine = QuotexEngine(config)
             pendingStrategyCalls.clear()
+            pendingJournal.clear()
             strategyTrackers = defaultStrategies().associate { it.name to StrategyPerformanceTracker() }
             signalStateMachine = SignalStateMachine()
         }
@@ -213,6 +244,7 @@ class QuotexCoordinator(
             candles.clear()
             candles.addAll(keep)
             pendingStrategyCalls.clear() // their candle-index keys no longer line up after the trim
+            pendingJournal.clear()
             rebuildEngineLocked()
             publishLocked(engine.latestPrediction())
             return
@@ -250,6 +282,19 @@ class QuotexCoordinator(
             }
         }
 
+        pendingJournal.remove(candles.lastIndex)?.let { (journalId, predictedDirection) ->
+            val startIdx = candles.lastIndex - config.expiryCandles
+            if (startIdx >= 0) {
+                val startPrice = candles[startIdx].close
+                val endPrice = candles[candles.lastIndex].close
+                if (endPrice != startPrice) {
+                    val higher = endPrice > startPrice
+                    val actualDirection = if (higher) QuotexDecision.CALL else QuotexDecision.PUT
+                    tradeJournal?.resolve(journalId, clock(), actualDirection.name, actualDirection == predictedDirection)
+                }
+            }
+        }
+
         val dataQualityOk = candles.size >= config.minCandlesForSignal
         val confluence = if (dataQualityOk) {
             val series = PriceSeries.window(candles, candles.size, config.modelCandleCap)
@@ -265,12 +310,35 @@ class QuotexCoordinator(
         }
         // Advance the state machine exactly once per closed candle, whether or not confluence ran.
         val signalReading = confluence?.let { signalStateMachine.update(it, dataQualityOk) }
-        publishLocked(prediction, resolvedMark, confluence, signalReading?.state)
+        if (prediction.isSignal && prediction.lean != QuotexDecision.WAIT && tradeJournal != null) {
+            val entryPrice = candles[candles.lastIndex].close
+            val reason = prediction.waitReason ?: confluence?.reason
+                ?: "${prediction.agree}/${prediction.totalModels} models agree on ${prediction.lean.name} at ${Fmt.pct(prediction.confidence)} confidence."
+            val id = tradeJournal.insert(
+                com.jarvis.assistant.quotex.data.QuotexJournalEntity(
+                    timestamp = clock(), asset = asset ?: "UNKNOWN", candleSeconds = config.candleSeconds,
+                    expiryCandles = config.expiryCandles, direction = prediction.lean.name, confidence = prediction.confidence,
+                    agree = prediction.agree, totalModels = prediction.totalModels, trend = prediction.trend.name,
+                    volatility = prediction.volatility.name, confluenceQuality = confluence?.quality?.name ?: "NOT_EVALUATED",
+                    signalState = signalReading?.state?.name ?: "SCANNING", entryPrice = entryPrice, reasonSummary = reason
+                )
+            )
+            pendingJournal[candles.lastIndex + config.expiryCandles] = Pair(id, prediction.lean)
+        }
+
+        agentRuntime.mode = if (settings.liveAnalysisEnabled) AgentMode.LIVE_ANALYSIS else AgentMode.SIMULATION
+        val riskNow = riskEngine.snapshot()
+        val agentSnapshot = agentRuntime.onCandleClosed(
+            candles = candles.toList(), nowMs = clock(), asset = name,
+            weights = strategyTrackers.mapValues { it.value.weight() },
+            riskPausedReason = if (riskNow.paused) "${riskNow.reason}" else null
+        )
+        publishLocked(prediction, resolvedMark, confluence, signalReading?.state, agentSnapshot)
     }
 
     private fun publishLocked(
         prediction: QuotexPrediction?, mark: QuotexOutcomeMark? = null,
-        confluence: ConfluenceResult? = null, signalState: SignalState? = null
+        confluence: ConfluenceResult? = null, signalState: SignalState? = null, agent: AgentSnapshot? = null
     ) {
         val liveOn = settings.liveAnalysisEnabled
         val risk = riskEngine.snapshot()
@@ -289,7 +357,7 @@ class QuotexCoordinator(
                 expirySeconds = config.expirySeconds, breakEven = config.breakEvenAccuracy, message = message,
                 confluence = if (liveOn && !risk.paused) (confluence ?: it.confluence) else null,
                 signalState = if (liveOn && signalState != null) signalState else it.signalState,
-                risk = risk
+                risk = risk, agent = agent ?: it.agent
             )
         }
     }
@@ -317,6 +385,25 @@ class QuotexCoordinator(
         }
     }
 
+    /** Walk-forward test of the full agent pipeline with train / validation / out-of-sample segments (sections 18-21). */
+    suspend fun runAgentBacktest(lastN: Int?): AgentBacktestReport {
+        ensureReady()
+        val cfg = config
+        val agentCfg = buildAgentConfig()
+        val snapshot = mutex.withLock { candles.toList() }
+        val slice = if (lastN == null) snapshot else snapshot.takeLast(lastN + cfg.minCandlesForSignal)
+        return withContext(Dispatchers.Default) { AgentBacktester(agentCfg).run(slice) }
+    }
+
+    /** Newest-first journal entries (section 27). */
+    fun journalLast(n: Int): List<JournalEntry> = agentJournal.last(n)
+
+    fun journalSince(startMs: Long): List<JournalEntry> = agentJournal.since(startMs)
+
+    fun journal(): QuotexJournal = agentJournal
+
+    fun agentSnapshot(): AgentSnapshot? = _state.value.agent
+
     /** Live, walk-forward-calibrated weight and record of each strategy in the library. */
     suspend fun strategyStatuses(): List<StrategyStatus> {
         ensureReady()
@@ -341,6 +428,31 @@ class QuotexCoordinator(
     suspend fun riskSnapshot(): com.jarvis.assistant.quotex.risk.RiskSnapshot {
         ensureReady()
         return mutex.withLock { riskEngine.snapshot() }
+    }
+
+    /** Every logged signal since local midnight (section 27 - "show today's performance"). */
+    suspend fun journalToday(): List<com.jarvis.assistant.quotex.data.JournalEntry> {
+        ensureReady()
+        val startOfDay = run {
+            val cal = java.util.Calendar.getInstance()
+            cal.timeInMillis = clock()
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+            cal.timeInMillis
+        }
+        return tradeJournal?.since(startOfDay) ?: emptyList()
+    }
+
+    /** The most recent [limit] logged signals, newest first (section 27 - "show my last N setups"). */
+    suspend fun journalRecent(limit: Int): List<com.jarvis.assistant.quotex.data.JournalEntry> {
+        ensureReady()
+        return tradeJournal?.latest(limit) ?: emptyList()
+    }
+
+    /** The most recent resolved loss, with the reasoning that was frozen at the moment it was signalled. */
+    suspend fun lastFailedSetup(): com.jarvis.assistant.quotex.data.JournalEntry? {
+        ensureReady()
+        return tradeJournal?.lastLoss()
     }
 
     suspend fun analytics(): QuotexAnalytics {

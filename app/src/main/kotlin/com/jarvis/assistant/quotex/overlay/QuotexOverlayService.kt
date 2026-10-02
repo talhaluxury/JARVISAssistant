@@ -300,6 +300,11 @@ class QuotexOverlayService : Service() {
         } else {
             detail.appendLine(state.message ?: p?.waitReason ?: "Collecting price history…")
         }
+        state.agent?.let { a ->
+            detail.appendLine("AGENT       ${a.report.status.emoji} ${a.report.status.label}")
+            detail.appendLine("REGIME      ${a.report.regime.name}   DATA ${a.report.dataQuality.name}")
+            detail.appendLine("CONFLUENCE  ${a.report.conditionsMet} / ${a.report.conditionsTotal}")
+        }
         val bt = state.backtest?.independentCalls
         val acc = bt?.accuracy
         if (bt != null && acc != null) {

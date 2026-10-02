@@ -50,6 +50,23 @@ class QuotexViewModel(application: Application) : AndroidViewModel(application) 
     private val _confluenceBusy = MutableStateFlow(false)
     val confluenceBusy: StateFlow<Boolean> = _confluenceBusy.asStateFlow()
 
+    private val _journalToday = MutableStateFlow<List<com.jarvis.assistant.quotex.data.JournalEntry>>(emptyList())
+    val journalToday: StateFlow<List<com.jarvis.assistant.quotex.data.JournalEntry>> = _journalToday.asStateFlow()
+
+    private val _journalRecent = MutableStateFlow<List<com.jarvis.assistant.quotex.data.JournalEntry>>(emptyList())
+    val journalRecent: StateFlow<List<com.jarvis.assistant.quotex.data.JournalEntry>> = _journalRecent.asStateFlow()
+
+    fun refreshJournal() {
+        viewModelScope.launch {
+            try {
+                _journalToday.value = module.coordinator.journalToday()
+                _journalRecent.value = module.coordinator.journalRecent(20)
+            } catch (e: Exception) {
+                module.coordinator.setMessage("Could not load the trade journal.")
+            }
+        }
+    }
+
     private val _chat = MutableStateFlow("Ask about the current chart: signal, why, accuracy, price, backtest.")
     val chat: StateFlow<String> = _chat.asStateFlow()
 
@@ -61,6 +78,7 @@ class QuotexViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         refreshAnalytics()
+        refreshJournal()
     }
 
     fun refreshAnalytics() {
@@ -241,6 +259,7 @@ class QuotexViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             module.coordinator.resetData()
             refreshAnalytics()
+            refreshJournal()
         }
     }
 
