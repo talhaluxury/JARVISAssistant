@@ -91,7 +91,7 @@ object GridPriceFinder {
 /** Reads the asset name (top of the chart area) and the live price (right-hand axis) from OCR words. */
 class QuotexScreenParser {
     private val priceRegex = Regex("^\\d{1,6}[.,]\\d{2,6}$")
-    private val pairRegex = Regex("([A-Za-z]{3})\\s*/\\s*([A-Za-z]{3})")
+    private val pairRegex = Regex("\\b([A-Za-z]{3})\\s*/\\s*([A-Za-z]{3})\\b")
     private val joinedPairRegex = Regex("\\b([A-Za-z]{3})([A-Za-z]{3})\\b")
     private val currencyCodes = setOf(
         "EUR", "USD", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD", "SGD", "HKD", "TRY", "ZAR", "MXN", "NOK", "SEK", "PLN",
@@ -107,9 +107,10 @@ class QuotexScreenParser {
             )
         }
 
-        val top = lines.filter { it.centerY < height * 0.30f }.sortedWith(compareBy({ it.top }, { it.left }))
-        val topText = top.joinToString(" ") { it.text }
-        val asset = findAsset(top, topText)
+        // The asset name can be at the top (web / tablet) or in the bottom trade panel (phone app): search it all.
+        val textLines = lines.sortedWith(compareBy({ it.top }, { it.left }))
+        val allText = textLines.joinToString(" ") { it.text }
+        val asset = findAsset(textLines, allText)
 
         val labels = ArrayList<AxisLabel>()
         val heights = ArrayList<Int>()
@@ -122,6 +123,17 @@ class QuotexScreenParser {
             labels.add(AxisLabel(value, line.centerY))
             heights.add(line.height.coerceAtLeast(1))
         }
+        // Other numbers on the right edge (e.g. the payout amount) are not prices: drop anything far from the median.
+        if (labels.size >= 3) {
+            val median = labels.map { it.value }.sorted()[labels.size / 2]
+            val keep = labels.indices.filter { abs(labels[it].value - median) <= abs(median) * 0.10 }
+            if (keep.size < labels.size) {
+                val l2 = keep.map { labels[it] }
+                val h2 = keep.map { heights[it] }
+                labels.clear(); labels.addAll(l2)
+                heights.clear(); heights.addAll(h2)
+            }
+        }
         val assetNote = if (asset == null) "asset name not found" else "asset $asset"
         if (labels.size < 4) {
             return QuotexReading(
@@ -131,7 +143,7 @@ class QuotexScreenParser {
             )
         }
         val medianHeight = heights.sorted()[heights.size / 2]
-        val tolerance = medianHeight * 1.5f
+        val tolerance = medianHeight * 2.5f // axis labels sit a little above their grid lines, the live chip is centred on its line
         var price = GridPriceFinder.find(labels, tolerance)
         var relaxed = false
         if (price == null) {
@@ -150,7 +162,11 @@ class QuotexScreenParser {
         val otc = topText.contains("OTC", ignoreCase = true)
         fun tag(base: String) = if (otc) base + "_OTC" else base
 
-        pairRegex.find(topText)?.let {
+        val slashPairs = pairRegex.findAll(topText).toList()
+        val known = slashPairs.firstOrNull {
+            it.groupValues[1].uppercase() in currencyCodes && it.groupValues[2].uppercase() in currencyCodes
+        }
+        (known ?: slashPairs.firstOrNull())?.let {
             return tag(it.groupValues[1].uppercase() + it.groupValues[2].uppercase())
         }
         for (m in joinedPairRegex.findAll(topText)) {

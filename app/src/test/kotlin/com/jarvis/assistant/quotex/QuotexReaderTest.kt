@@ -71,3 +71,27 @@ class QuotexReaderTest {
         assertEquals("EURUSD", reading.asset)
     }
 }
+
+class QuotexPhoneLayoutTest {
+    private fun word(text: String, left: Int, centerY: Int) = OcrLine(text, left, centerY - 18, left + 130, centerY + 18, 0.95f)
+
+    /** Layout of the Quotex phone app: asset in the bottom panel, payout amount on the right edge. */
+    private fun phoneScreen(): List<OcrLine> = listOf(
+        word("1.12500", 900, 290), word("1.12480", 900, 581), word("1.12460", 900, 870),
+        word("1.12440", 900, 1161), word("1.12420", 900, 1452), word("1.12417", 900, 1530),
+        word("1.12413", 470, 1628),              // crosshair label, not on the right-hand axis
+        word("EUR/USD", 130, 1800), word("88%", 300, 1800),
+        word("3.76", 930, 2022), word("$", 1040, 2022) // payout amount: a number, but not a price
+    )
+
+    @Test
+    fun assetInTheBottomPanelIsFound() {
+        assertEquals("EURUSD", QuotexScreenParser().parse(phoneScreen(), 1080, 2000).asset)
+    }
+
+    @Test
+    fun payoutAmountDoesNotBreakThePriceRead() {
+        val reading = QuotexScreenParser().parse(phoneScreen(), 1080, 2000)
+        assertEquals(1.12417, reading.price!!, 1e-12)
+    }
+}
