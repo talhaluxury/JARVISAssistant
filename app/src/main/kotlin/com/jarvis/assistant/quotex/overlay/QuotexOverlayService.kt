@@ -88,6 +88,13 @@ class QuotexOverlayService : Service() {
                 withContext(Dispatchers.Default) { module.coordinator.ensureReady() }
                 module.coordinator.state.collect { render(it) }
             }
+            // Re-draw once a second so the "next candle in" countdown keeps moving between price updates.
+            scope.launch {
+                while (true) {
+                    kotlinx.coroutines.delay(1000)
+                    render(lastState)
+                }
+            }
         }
         return START_NOT_STICKY
     }
@@ -305,6 +312,9 @@ class QuotexOverlayService : Service() {
             detail.appendLine("SIGNAL      ${signal.name}")
             detail.appendLine("MODELS      ${p.agree}/${p.totalModels} agree")
             detail.appendLine("EXPIRY      ${state.expirySeconds}s")
+            val candleMs = module.coordinator.currentConfig().candleMs
+            val nextCandleMs = candleMs - (System.currentTimeMillis() % candleMs)
+            detail.appendLine("NEXT CANDLE ${com.jarvis.assistant.quotex.analysis.CandleTimer.format(nextCandleMs)}  (timing only, not a prediction)")
         } else {
             detail.appendLine(state.message ?: p?.waitReason ?: "Collecting price history…")
         }

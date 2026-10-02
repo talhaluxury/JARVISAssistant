@@ -166,12 +166,16 @@ class QuotexCoordinator(
         pendingJournal.clear()
         if (forAsset != null) {
             val stored = repository.latestAscending(forAsset, config.maxCandlesKept)
-            candles.addAll(CandleRuns.contiguousTail(stored, config.candleMs, MAX_GAP_CANDLES))
+            candles.addAll(CandleRuns.contiguousTail(stored, config.candleMs, resumeGapCandles()))
         }
         rebuildEngineLocked()
         ready = true
         publishLocked(null)
     }
+
+    /** Gap tolerance in candles: at least [MAX_GAP_CANDLES], and long enough to cover [RESUME_WITHIN_MS]. */
+    private fun resumeGapCandles(): Int =
+        maxOf(MAX_GAP_CANDLES, (RESUME_WITHIN_MS / config.candleMs).toInt())
 
     private suspend fun rebuildEngineLocked() {
         val snapshot = candles.toList()
@@ -255,7 +259,7 @@ class QuotexCoordinator(
         val name = asset ?: "UNKNOWN"
         repository.insert(name, candle)
         val last = candles.lastOrNull()
-        val gap = last != null && candle.openTimeMs - last.openTimeMs > config.candleMs * (MAX_GAP_CANDLES + 1)
+        val gap = last != null && candle.openTimeMs - last.openTimeMs > config.candleMs * (resumeGapCandles() + 1)
         if (gap) {
             candles.clear()
             engine = QuotexEngine(config)
@@ -520,5 +524,12 @@ class QuotexCoordinator(
          * candles: the data-quality check still counts them and lowers trust accordingly.
          */
         const val MAX_GAP_CANDLES = 5
+
+        /**
+         * Longest break (app closed, phone restarted, monitoring paused) after which saved history is still resumed
+         * instead of restarting from 1. Longer breaks restart, because stale prices would mislead the analysis.
+         * The break is still counted as a gap by the data-quality check; nothing is filled in.
+         */
+        const val RESUME_WITHIN_MS = 10 * 60 * 1000L
     }
 }
