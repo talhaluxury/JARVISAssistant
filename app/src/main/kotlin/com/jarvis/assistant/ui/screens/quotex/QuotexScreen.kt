@@ -78,6 +78,7 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
     var overlayAllowed by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var liveOn by remember { mutableStateOf(vm.liveAnalysisEnabled()) }
     var requireEdge by remember { mutableStateOf(vm.requireVerifiedEdge()) }
+    var chartCandles by remember { mutableStateOf(vm.useChartCandles()) }
     var candleSeconds by remember { mutableStateOf(vm.candleSeconds()) }
     var expiry by remember { mutableStateOf(vm.expiryCandles().toFloat()) }
     var payout by remember { mutableStateOf(vm.payout()) }
@@ -139,7 +140,7 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
             )
             StatusLine("Asset", state.asset ?: "—", state.asset != null)
             StatusLine("Last price", state.lastPrice?.toString() ?: "—", state.lastPrice != null)
-            StatusLine("Candles stored", "${state.candleCount} (${candleSeconds}s each)", state.candleCount >= 150)
+            StatusLine("Candles stored", "${state.candleCount} (${com.jarvis.assistant.quotex.agent.CandleClock.label(candleSeconds)} each)", state.candleCount >= 150)
             StatusLine("Unreadable ticks skipped", state.unreadableTicks.toString(), true)
             state.message?.let { Text(it, color = Warn, fontSize = 11.sp) }
             if (state.screenStatus != ScreenStatus.TRACKING && state.readerNote.isNotBlank()) {
@@ -282,11 +283,11 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
                 Slider(value = regionBottom, onValueChange = { regionBottom = it }, valueRange = 0.1f..1f, onValueChangeFinished = { vm.saveRegion(regionTop, regionBottom) })
                 Text("Restart monitoring after changing this.", color = Muted, fontSize = 10.sp)
             }
-            SetupStep("5. Candle length", null) {
+            SetupStep("5. Timeframe (${com.jarvis.assistant.quotex.domain.TimeframePlan.forEntry(candleSeconds).describe()})", null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (s in listOf(10, 15, 30, 60)) {
-                        OutlinedButton(onClick = { candleSeconds = s; vm.setCandleSeconds(s) }) {
-                            Text("${s}s", color = if (candleSeconds == s) Cyan else Muted, fontSize = 11.sp)
+                    for (tf in com.jarvis.assistant.quotex.domain.Timeframe.values()) {
+                        OutlinedButton(onClick = { candleSeconds = tf.seconds; vm.setCandleSeconds(tf.seconds) }) {
+                            Text(tf.label, color = if (candleSeconds == tf.seconds) Cyan else Muted, fontSize = 11.sp)
                         }
                     }
                 }
@@ -311,6 +312,12 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
                 Spacer(Modifier.width(8.dp))
                 Text("Only show a signal once a real edge is measured (recommended)", color = Muted, fontSize = 11.sp)
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = chartCandles, onCheckedChange = { chartCandles = it; vm.setUseChartCandles(it) })
+                Spacer(Modifier.width(8.dp))
+                Text("Read real candle highs/lows from the chart image (turn off if readings look wrong)", color = Muted, fontSize = 11.sp)
+            }
+            if (state.chartStatus.isNotBlank()) Text("Chart candles: ${state.chartStatus}", color = Muted, fontSize = 10.sp)
         }
 
         Panel("ANALYTICS (THIS SESSION)") {

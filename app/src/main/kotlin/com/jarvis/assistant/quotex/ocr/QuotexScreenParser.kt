@@ -4,13 +4,22 @@ import com.jarvis.assistant.wingo.ocr.OcrLine
 import kotlin.math.abs
 import kotlin.math.round
 
-data class AxisLabel(val value: Double, val y: Float)
+data class AxisLabel(val value: Double, val y: Float, val confidence: Float = 1f)
 
+/**
+ * One OCR reading. [confidence] (0..1) is how much the reader itself trusted the numbers the price was taken
+ * from; it is null when the engine reports no usable confidence (never a made-up value).
+ */
 data class QuotexReading(
     val price: Double?,
     val asset: String?,
     val note: String,
-    val axisLabels: Int
+    val axisLabels: Int,
+    val confidence: Double? = null,
+    /** Axis labels that sit on the evenly spaced grid (the live-price chip excluded): used to calibrate pixel -> price. */
+    val gridLabels: List<AxisLabel> = emptyList(),
+    /** Left edge (px, in the cropped image) of the price axis text: candles are only searched to the left of it. */
+    val axisLeftX: Int? = null
 )
 
 /**
@@ -129,7 +138,7 @@ class QuotexScreenParser {
             val text = line.text.trim().filter { it.isDigit() || it == '.' || it == ',' }
             if (!priceRegex.matches(text)) continue
             val value = text.replace(',', '.').toDoubleOrNull() ?: continue
-            labels.add(AxisLabel(value, line.centerY))
+            labels.add(AxisLabel(value, line.centerY, line.confidence))
             heights.add(line.height.coerceAtLeast(1))
         }
         // Other numbers on the right edge (e.g. the payout amount) are not prices: drop anything far from the median.
@@ -164,7 +173,26 @@ class QuotexScreenParser {
             relaxed -> "OK (few axis numbers), $assetNote"
             else -> "OK, $assetNote"
         }
-        return QuotexReading(price, asset, note, labels.size)
+        val grid = if (price == null) emptyList() else labels.filter { it.value != price }
+        val keptValues = labels.map { it.value }.toSet()
+        val axisLeft = if (price == null) null else lines.filter { line ->
+            (line.left + line.right) / 2f >= width * 0.65f &&
+                line.text.trim().filter { it.isDigit() || it == '.' || it == ',' }.replace(',', '.').toDoubleOrNull() in keptValues
+        }.minOfOrNull { it.left }
+        return QuotexReading(price, asset, note, labels.size, if (price == null) null else readingConfidence(labels, price), grid, axisLeft)
+    }
+
+    /**
+     * Confidence of one reading = the weaker of (a) the live-price label itself and (b) the average of the grid
+     * labels it was validated against. A reader that reports 0 for everything is treated as "unknown" (null),
+     * so a missing score can never be mistaken for a measured one.
+     */
+    private fun readingConfidence(labels: List<AxisLabel>, price: Double): Double? {
+        val priceLabel = labels.firstOrNull { it.value == price } ?: return null
+        val grid = labels.filter { it !== priceLabel }
+        if (priceLabel.confidence <= 0f || grid.isEmpty() || grid.all { it.confidence <= 0f }) return null
+        val gridAvg = grid.filter { it.confidence > 0f }.map { it.confidence.toDouble() }.average()
+        return minOf(priceLabel.confidence.toDouble(), gridAvg).coerceIn(0.0, 1.0)
     }
 
     private val notAssetWords = setOf(

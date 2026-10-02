@@ -14,8 +14,13 @@ class QuotexSettings(context: Context) {
         get() = prefs.getBoolean("require_edge", true)
         set(value) { prefs.edit().putBoolean("require_edge", value).apply() }
 
+    /** Use candles read from the chart image to correct sampled highs/lows. Safe to turn off if a build misreads. */
+    var useChartCandles: Boolean
+        get() = prefs.getBoolean("use_chart_candles", true)
+        set(value) { prefs.edit().putBoolean("use_chart_candles", value).apply() }
+
     var candleSeconds: Int
-        get() = prefs.getInt("candle_seconds", 15)
+        get() = prefs.getInt("candle_seconds", 60)
         set(value) { prefs.edit().putInt("candle_seconds", value).apply() }
 
     var expiryCandles: Int

@@ -1,11 +1,13 @@
 package com.jarvis.assistant.quotex.agent
 
+import com.jarvis.assistant.quotex.domain.TimeframePlan
 import com.jarvis.assistant.quotex.analysis.ConfluenceEngine
 import com.jarvis.assistant.quotex.analysis.ConfluenceResult
 import com.jarvis.assistant.quotex.analysis.MarketStructure
 import com.jarvis.assistant.quotex.analysis.PriceSeries
 import com.jarvis.assistant.quotex.analysis.SetupQuality
 import com.jarvis.assistant.quotex.analysis.StrategyResult
+import com.jarvis.assistant.quotex.analysis.StructureEvents
 import com.jarvis.assistant.quotex.analysis.StructureLabel
 import com.jarvis.assistant.quotex.analysis.TrendState
 import com.jarvis.assistant.quotex.analysis.VolatilityState
@@ -99,6 +101,8 @@ class AgentAnalyzer(
     private val newsFilter: NewsRiskFilter = NewsRiskFilter(null)
 ) {
     private val validator = DataValidator(config.candleSeconds * 1000L, config.minCandles)
+    /** Middle/higher timeframes follow the entry timeframe the user trades (section 4), not a fixed multiple. */
+    private val strategyLibrary = fullStrategyLibrary(TimeframePlan.forEntry(config.candleSeconds))
 
     fun analyze(
         candles: List<Candle>,
@@ -163,7 +167,7 @@ class AgentAnalyzer(
         }
         checks.add(AgentCheck("Regime", true, regime.name))
 
-        val allowed = fullStrategyLibrary().filter { RegimeGate.allows(it.name, regime) }
+        val allowed = strategyLibrary.filter { RegimeGate.allows(it.name, regime) }
         val confluence = ConfluenceEngine(allowed, weights).evaluate(series, trend, structure, volatility)
         val leaning = confluence.strategyResults.filter { it.direction != QuotexDecision.WAIT }
         val calls = leaning.count { it.direction == QuotexDecision.CALL }
@@ -185,6 +189,19 @@ class AgentAnalyzer(
         val mtfOk = mtf == null || mtf.direction == QuotexDecision.WAIT || mtf.direction == dir
         checks.add(AgentCheck("Multi-timeframe", mtfOk, mtf?.direction?.name ?: "not enough history"))
         if (!mtfOk) return finish(AgentStatus.WAIT, listOf("Higher and lower timeframe disagree."), confluence)
+
+        // A fresh structural event against the setup (change of character, false breakout, liquidity sweep) is a veto.
+        val structureReport = StructureEvents.analyze(series)
+        val againstEvents = StructureEvents.against(structureReport, callSide = dir == QuotexDecision.CALL)
+        checks.add(
+            AgentCheck(
+                "Structure events", againstEvents.isEmpty(),
+                if (againstEvents.isEmpty()) "no fresh event against the setup" else againstEvents.joinToString { it.type.label }
+            )
+        )
+        if (againstEvents.isNotEmpty()) {
+            return finish(AgentStatus.WAIT, listOf("Fresh structure event against the setup: ${againstEvents.joinToString { it.type.label }}."), confluence)
+        }
 
         // Never enter straight into a strong opposing level.
         val intoLevel = atr != null && opposingLevelNear(series, dir, atr)

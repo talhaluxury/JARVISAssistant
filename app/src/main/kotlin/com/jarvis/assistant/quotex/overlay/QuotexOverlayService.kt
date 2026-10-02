@@ -22,11 +22,11 @@ import android.widget.TextView
 import com.jarvis.assistant.JarvisApplication
 import com.jarvis.assistant.quotex.QuotexModule
 import com.jarvis.assistant.quotex.QuotexUiState
-import com.jarvis.assistant.quotex.voice.QuotexNarrator
-import com.jarvis.assistant.trading.QuotexDecision
+import com.jarvis.assistant.quotex.agent.AgentNarrator
+import com.jarvis.assistant.quotex.agent.AgentStatus
+import com.jarvis.assistant.quotex.agent.CandleClock
+import com.jarvis.assistant.quotex.agent.ExplanationEngine
 import com.jarvis.assistant.wingo.ScreenStatus
-import com.jarvis.assistant.wingo.domain.Fmt
-import com.jarvis.assistant.wingo.domain.Signal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,7 +41,7 @@ import kotlin.math.abs
  */
 class QuotexOverlayService : Service() {
 
-    private enum class Tab { ANALYSIS, CHAT }
+    private enum class Tab { DETAILS, HISTORY, CHAT }
 
     private lateinit var windowManager: WindowManager
     private lateinit var module: QuotexModule
@@ -50,8 +50,9 @@ class QuotexOverlayService : Service() {
     private var root: LinearLayout? = null
     private lateinit var params: WindowManager.LayoutParams
     private var expanded = false
-    private var tab = Tab.ANALYSIS
+    private var tab = Tab.DETAILS
     private var chatText = "Ask about the current chart. Answers come from stored data only."
+    private var historyText = "Loading journal…"
     private var lastState = QuotexUiState()
 
     private lateinit var pill: TextView
@@ -172,7 +173,7 @@ class QuotexOverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(8), 0, dp(4))
         }
-        for ((t, name) in listOf(Tab.ANALYSIS to "ANALYSIS", Tab.CHAT to "CHAT")) {
+        for ((t, name) in listOf(Tab.DETAILS to "DETAILS", Tab.HISTORY to "HISTORY", Tab.CHAT to "CHAT")) {
             val tv = label(name, 11f, MUTED, bold = true).apply {
                 setPadding(0, 0, dp(14), 0)
                 setOnClickListener { showTab(t) }
@@ -232,7 +233,7 @@ class QuotexOverlayService : Service() {
         container.addView(panel)
         root = container
         windowManager.addView(container, params)
-        showTab(Tab.ANALYSIS)
+        showTab(Tab.DETAILS)
         render(lastState)
     }
 
@@ -257,6 +258,7 @@ class QuotexOverlayService : Service() {
         for ((t, view) in tabViews) view.setTextColor(if (t == newTab) CYAN else MUTED)
         chatRow.visibility = if (newTab == Tab.CHAT) View.VISIBLE else View.GONE
         if (newTab != Tab.CHAT) setWindowFocusable(false)
+        if (newTab == Tab.HISTORY) loadHistory()
         renderContent()
     }
 
@@ -277,64 +279,57 @@ class QuotexOverlayService : Service() {
         }
     }
 
+    /** Section 40: the only five states the overlay may show, each with its own colour. No made-up confidence. */
+    private fun statusColor(status: AgentStatus): Int = when (status) {
+        AgentStatus.SETUP_DETECTED -> GREEN
+        AgentStatus.WATCH -> AMBER
+        AgentStatus.WAIT -> BLUE
+        AgentStatus.NO_TRADE -> RED
+        AgentStatus.DATA_UNCERTAIN -> MUTED
+    }
+
     private fun render(state: QuotexUiState) {
         lastState = state
         if (root == null) return
-        val p = state.prediction
-        val signal = p?.signal ?: Signal.WAIT
-        val decision = p?.decision ?: QuotexDecision.WAIT
-        val shown = signal != Signal.WAIT && decision != QuotexDecision.WAIT
-        val color = when (signal) {
-            Signal.HIGH -> GREEN
-            Signal.MEDIUM -> CYAN
-            Signal.LOW -> AMBER
-            Signal.WAIT -> MUTED
-        }
-        val word = if (decision == QuotexDecision.CALL) "CALL" else "PUT"
+        val agent = state.agent
+        val report = agent?.report
+        val nowMs = System.currentTimeMillis()
 
+        // Until the agent has run once there is nothing to judge: that is DATA UNCERTAIN, never a guess.
+        val status = report?.status ?: AgentStatus.DATA_UNCERTAIN
+        val color = statusColor(status)
         pill.text = when {
             !state.monitorOn -> "◉ QUOTEX · OFF"
-            state.screenStatus == ScreenStatus.NOT_DETECTED -> "◉ QUOTEX · NO CHART"
-            p != null && shown -> "◉ $word ${Fmt.pct(p.confidence)}"
-            else -> "◉ WAIT"
+            state.screenStatus == ScreenStatus.NOT_DETECTED -> "⚪ NO CHART"
+            else -> "${status.emoji} ${status.label}"
         }
-        pill.setTextColor(color)
+        pill.setTextColor(if (!state.monitorOn) MUTED else color)
 
-        assetView.text = "${state.asset ?: "ASSET —"}  ${state.lastPrice?.toString() ?: ""}"
-        decisionView.text = if (shown) word else "WAIT"
+        val tfSeconds = module.coordinator.currentConfig().candleSeconds
+        assetView.text = "${state.asset ?: "ASSET —"}  ${CandleClock.label(tfSeconds)}  ${state.lastPrice?.toString() ?: ""}".trimEnd()
+        decisionView.text = "${status.emoji} ${status.label}"
         decisionView.setTextColor(color)
 
         val detail = StringBuilder()
-        if (p != null) detail.appendLine("TREND       ${p.trend.name}   VOLATILITY  ${p.volatility.name}")
-        state.confluence?.let { detail.appendLine("SETUP       ${it.quality.name.replace('_', ' ')} (${state.signalState.name})") }
-        if (p != null && shown) {
-            detail.appendLine("CONFIDENCE  ${Fmt.pct(p.confidence)}")
-            detail.appendLine("SIGNAL      ${signal.name}")
-            detail.appendLine("MODELS      ${p.agree}/${p.totalModels} agree")
-            detail.appendLine("EXPIRY      ${state.expirySeconds}s")
-            val candleMs = module.coordinator.currentConfig().candleMs
-            val nextCandleMs = candleMs - (System.currentTimeMillis() % candleMs)
-            detail.appendLine("NEXT CANDLE ${com.jarvis.assistant.quotex.analysis.CandleTimer.format(nextCandleMs)}  (timing only, not a prediction)")
+        if (report != null) {
+            // Section 30 body without its STATUS line (the big label above already is the status).
+            for (line in ExplanationEngine.overlayLines(report, state.asset ?: "ASSET —", tfSeconds).drop(1).dropLast(1)) detail.appendLine(line)
+            detail.appendLine("DATA: ${report.dataQuality.name}")
+            if (status == AgentStatus.SETUP_DETECTED) {
+                val life = agent.lifecycle
+                detail.appendLine("BIAS: ${report.direction.name} (analytical, not a guarantee)")
+                detail.appendLine("SIGNAL AGE: ${life.ageSeconds}s   VALID FOR: ${life.remainingSeconds}s")
+            } else {
+                detail.appendLine(report.headlineReason.ifEmpty { "Conditions reviewed." })
+            }
+            detail.appendLine("${CandleClock.label(tfSeconds)} CANDLE ${CandleClock.format(CandleClock.remainingMs(nowMs, agent.candleMs))} REMAINING (timing only)")
+            detail.append("MODE: ${agent.mode.name.replace('_', ' ')}")
         } else {
-            detail.appendLine(state.message ?: p?.waitReason ?: "Collecting price history…")
+            detail.append(state.message ?: "Collecting price history…")
         }
-        if (state.screenStatus != ScreenStatus.TRACKING && state.readerNote.isNotBlank()) detail.appendLine("READER      ${state.readerNote}")
-        state.agent?.let { a ->
-            detail.appendLine("AGENT       ${a.report.status.emoji} ${a.report.status.label}")
-            detail.appendLine("REGIME      ${a.report.regime.name}   DATA ${a.report.dataQuality.name}")
-            detail.appendLine("CONFLUENCE  ${a.report.conditionsMet} / ${a.report.conditionsTotal}")
-        }
-        val bt = state.backtest?.independentCalls
-        val acc = bt?.accuracy
-        if (bt != null && acc != null) {
-            detail.appendLine("BACKTEST    ${Fmt.pct(acc, 1)} (n=${bt.calls}, break-even ${Fmt.pct(state.breakEven, 1)})")
-        } else {
-            detail.appendLine("BACKTEST    n/a")
-        }
-        val last = state.lastOutcome
-        if (last != null) {
-            detail.append("LAST        ${if (last.correct) "✓ CORRECT" else "✕ WRONG"}")
-        }
+        state.risk?.takeIf { it.paused }?.let { detail.append("\nTRADING PAUSED — ${it.reason}") }
+        if (state.chartStatus.isNotBlank()) detail.append("\nCHART: ${state.chartStatus}")
+        if (state.screenStatus != ScreenStatus.TRACKING && state.readerNote.isNotBlank()) detail.append("\nREADER: ${state.readerNote}")
         detailView.text = detail.toString().trimEnd()
         renderContent()
     }
@@ -343,15 +338,25 @@ class QuotexOverlayService : Service() {
         if (root == null) return
         val state = lastState
         contentView.text = when (tab) {
-            Tab.ANALYSIS -> {
-                val p = state.prediction
-                if (p == null) {
+            Tab.DETAILS -> {
+                val agent = state.agent
+                if (agent == null) {
                     state.message ?: "No analysis yet."
                 } else {
-                    QuotexNarrator.why(state) + "\n\n" + p.edge.summary + "\n" + (state.backtest?.verdict ?: "")
+                    ExplanationEngine.explain(agent.report) + "\n\nHISTORICAL EVIDENCE: " + agent.evidence.summary
                 }
             }
+            Tab.HISTORY -> historyText
             Tab.CHAT -> chatText
+        }
+    }
+
+    private fun loadHistory() {
+        scope.launch {
+            historyText = withContext(Dispatchers.Default) {
+                AgentNarrator.journalList(module.coordinator.journalLast(10))
+            }
+            renderContent()
         }
     }
 
@@ -429,6 +434,8 @@ class QuotexOverlayService : Service() {
         private val MUTED = Color.parseColor("#94A3B8")
         private val GREEN = Color.parseColor("#4ADE80")
         private val AMBER = Color.parseColor("#FBBF24")
+        private val BLUE = Color.parseColor("#60A5FA")
+        private val RED = Color.parseColor("#F87171")
 
         fun show(context: Context) {
             try {

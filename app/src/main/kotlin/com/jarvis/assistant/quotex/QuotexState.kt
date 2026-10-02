@@ -41,7 +41,9 @@ data class QuotexUiState(
     /** Full-pipeline read (data quality, regime, 10 strategies, lifecycle) - see the quotex.agent package. */
     val agent: AgentSnapshot? = null,
     /** Last thing the screen reader reported (why the chart / price / asset was or was not found). */
-    val readerNote: String = ""
+    val readerNote: String = "",
+    /** Whether real chart candles are refining the sampled ones (section 31). */
+    val chartStatus: String = ""
 )
 
 data class QuotexAnalytics(

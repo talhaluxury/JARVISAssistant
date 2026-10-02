@@ -125,6 +125,12 @@ class QuotexViewModel(application: Application) : AndroidViewModel(application) 
         applySettings()
     }
 
+    fun useChartCandles(): Boolean = module.settings.useChartCandles
+
+    fun setUseChartCandles(enabled: Boolean) {
+        module.settings.useChartCandles = enabled // read live by the coordinator and monitor; no history reset needed
+    }
+
     fun setRequireVerifiedEdge(enabled: Boolean) {
         module.settings.requireVerifiedEdge = enabled
         applySettings()

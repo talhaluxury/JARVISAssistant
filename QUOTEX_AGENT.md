@@ -33,3 +33,17 @@ TRADE JOURNAL panel; chat: "signal journal" / "signal history").
 
 Not done on purpose: no economic-calendar feed (pass events
 into `NewsRiskFilter` yourself; without them news risk shows UNAVAILABLE), no order execution.
+
+## Update: data input, timeframes, overlay (NOT compiled or test-run)
+
+- OCR confidence: `QuotexReading.confidence` (weaker of live-price label and mean grid label; null if the engine reports 0) ->
+  `QuotexCoordinator` drops ticks below 0.35 and passes the per-candle mean to `AgentRuntime.onCandleClosed`, so the 0.6 DATA UNCERTAIN gate now runs.
+- Timeframes: UI offers 1M/5M/15M/30M/1H; `AgentAnalyzer` builds the strategy library from `TimeframePlan.forEntry(...)`;
+  Strategy 10 uses only the levels that exist and abstains when none do.
+- Overlay: shows only the five final states (🟢🟡🔵🔴⚪) from the agent, DETAILS/HISTORY/CHAT tabs, no CALL/PUT percentage.
+- `ocr/ChartCandleDetector.kt`: reads real OHLC from chart pixels + `PriceAxisCalibration` from `QuotexReading.gridLabels`.
+  Wired in: `QuotexMonitorService.detectChart` runs on the same frame as the OCR reading, `QuotexCoordinator.onChartDetection`
+  accepts it only if the forming candle's close matches the OCR live price (0.02%) and confidence >= 0.7, and
+  `ChartRefiner` lets a chart candle replace the sampled one ONLY when open/close agree (0.03%) and wicks are sane.
+  Otherwise sampled candles are used unchanged. Switch: Quotex setup -> "Read real candle highs/lows from the chart image".
+  Colours (Quotex green/red) and thresholds are untested on real screenshots - check "Chart candles:" status line.

@@ -89,6 +89,12 @@ class QuotexCoordinator(
     private var asset: String? = null
     private var lastPrice: Double? = null
     private var ready = false
+    /** OCR confidence of every accepted tick of the candle currently being built (section 31). */
+    private val ocrSamples = ArrayList<Double>()
+    /** Closed candles read from the chart image, keyed by open time; they only ever refine sampled candles. */
+    private val chartCandles = LinkedHashMap<Long, Candle>()
+    private var chartRefined = 0
+    private var chartSeen = 0
 
     private val _state = MutableStateFlow(QuotexUiState())
     val state: StateFlow<QuotexUiState> = _state.asStateFlow()
@@ -141,6 +147,8 @@ class QuotexCoordinator(
             pendingJournal.clear()
             riskEngine = com.jarvis.assistant.quotex.risk.RiskEngine(settings.riskConfig(), clock)
             builder = CandleBuilder(config.candleSeconds)
+            ocrSamples.clear()
+            chartCandles.clear()
             lastPrice = null
             _state.update {
                 it.copy(
@@ -157,6 +165,8 @@ class QuotexCoordinator(
         riskEngine.updateConfig(settings.riskConfig())
         asset = forAsset
         builder = CandleBuilder(config.candleSeconds)
+        ocrSamples.clear()
+        chartCandles.clear()
         lastPrice = null
         candles.clear()
         liveOutcomes.clear()
@@ -211,7 +221,28 @@ class QuotexCoordinator(
                 noteUnreadable()
                 return@withLock
             }
-            addTickLocked(clock(), price)
+            val conf = reading.confidence
+            if (conf != null && conf < OCR_TICK_FLOOR) {
+                // Far too uncertain to build a candle from: counted as unreadable, never stored.
+                noteUnreadable()
+                return@withLock
+            }
+            addTickLocked(clock(), price, conf)
+        }
+    }
+
+    /**
+     * Candles read from the chart image of the SAME frame as [ocrPrice]. Accepted only when the forming candle's
+     * close agrees with the OCR live price; anything else is ignored. Call this BEFORE [onReading] for that frame,
+     * so the candle that closes on this frame can already be refined with it.
+     */
+    suspend fun onChartDetection(detection: com.jarvis.assistant.quotex.ocr.ChartDetection, ocrPrice: Double) {
+        mutex.withLock {
+            if (detection.candles.isEmpty() || detection.confidence < CHART_MIN_CONFIDENCE) return@withLock
+            if (!com.jarvis.assistant.quotex.ocr.ChartCandleDetector.agreesWith(detection, ocrPrice, ocrPrice * CHART_PRICE_TOLERANCE)) return@withLock
+            chartSeen++
+            for (c in detection.closed) chartCandles[c.openTimeMs] = c
+            while (chartCandles.size > CHART_KEEP) chartCandles.remove(chartCandles.keys.first())
         }
     }
 
@@ -242,7 +273,7 @@ class QuotexCoordinator(
         }
     }
 
-    private suspend fun addTickLocked(timeMs: Long, price: Double): Boolean {
+    private suspend fun addTickLocked(timeMs: Long, price: Double, ocrConfidence: Double? = null): Boolean {
         val previous = lastPrice
         if (previous != null && abs(price - previous) / previous > config.maxTickJumpFraction) {
             noteUnreadable() // implausible jump: treated as a misread, not stored
@@ -250,12 +281,27 @@ class QuotexCoordinator(
         }
         lastPrice = price
         val closed = builder.add(timeMs, price)
-        if (closed != null) onCandleClosedLocked(closed)
+        if (closed != null) {
+            // The tick that closed the candle belongs to the NEXT candle, so score the closed one first.
+            val closedConfidence = if (ocrSamples.isEmpty()) null else ocrSamples.average()
+            ocrSamples.clear()
+            if (ocrConfidence != null) ocrSamples.add(ocrConfidence)
+            onCandleClosedLocked(closed, closedConfidence)
+        } else if (ocrConfidence != null) {
+            ocrSamples.add(ocrConfidence)
+        }
         publishLocked(null)
         return true
     }
 
-    private suspend fun onCandleClosedLocked(candle: Candle) {
+    private suspend fun onCandleClosedLocked(sampled: Candle, ocrConfidence: Double? = null) {
+        val candle = if (settings.useChartCandles) {
+            val refined = com.jarvis.assistant.quotex.ocr.ChartRefiner.refine(sampled, chartCandles[sampled.openTimeMs])
+            if (refined !== sampled) chartRefined++
+            refined
+        } else {
+            sampled
+        }
         val name = asset ?: "UNKNOWN"
         repository.insert(name, candle)
         val last = candles.lastOrNull()
@@ -361,7 +407,8 @@ class QuotexCoordinator(
         val agentSnapshot = agentRuntime.onCandleClosed(
             candles = candles.toList(), nowMs = clock(), asset = name,
             weights = strategyTrackers.mapValues { it.value.weight() },
-            riskPausedReason = if (riskNow.paused) "${riskNow.reason}" else null
+            riskPausedReason = if (riskNow.paused) "${riskNow.reason}" else null,
+            ocrConfidence = ocrConfidence
         )
         publishLocked(prediction, resolvedMark, confluence, signalReading?.state, agentSnapshot)
     }
@@ -387,9 +434,16 @@ class QuotexCoordinator(
                 expirySeconds = config.expirySeconds, breakEven = config.breakEvenAccuracy, message = message,
                 confluence = if (liveOn && !risk.paused) (confluence ?: it.confluence) else null,
                 signalState = if (liveOn && signalState != null) signalState else it.signalState,
-                risk = risk, agent = agent ?: it.agent
+                risk = risk, agent = agent ?: it.agent,
+                chartStatus = chartStatusText()
             )
         }
+    }
+
+    private fun chartStatusText(): String = when {
+        !settings.useChartCandles -> "OFF (candles from sampled prices)"
+        chartSeen == 0 -> "no chart candles read yet (sampled prices only)"
+        else -> "$chartRefined candle(s) refined from chart, $chartSeen frames accepted"
     }
 
     // ---- queries -----------------------------------------------------------------------------------------
@@ -518,6 +572,12 @@ class QuotexCoordinator(
 
     private companion object {
         const val ASSET_SWITCH_HITS = 3
+        /** Readings the OCR engine itself scored below this are not turned into candles at all. */
+        const val OCR_TICK_FLOOR = 0.35
+        const val CHART_MIN_CONFIDENCE = 0.7
+        /** Forming candle close vs OCR live price, relative (0.02% ~ 2 pips on EUR/USD). */
+        const val CHART_PRICE_TOLERANCE = 0.0002
+        const val CHART_KEEP = 200
         /**
          * Missing candles tolerated before the in-memory history is restarted. A few unreadable seconds (the price
          * chip hiding an axis label, a slow OCR frame) must not wipe everything. The gaps are NOT filled with made-up

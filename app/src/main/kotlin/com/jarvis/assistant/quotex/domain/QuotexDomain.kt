@@ -53,6 +53,9 @@ data class QuotexConfig(
     val candleMs: Long get() = candleSeconds * 1000L
     val expirySeconds: Int get() = candleSeconds * expiryCandles
 
+    /** Which timeframes confirm momentum / give context for this entry timeframe (section 4). */
+    val timeframePlan: TimeframePlan get() = TimeframePlan.forEntry(candleSeconds)
+
     /** Win rate needed to break even at this payout: stake lost on a miss, [payout] won on a hit. */
     val breakEvenAccuracy: Double get() = 1.0 / (1.0 + payout)
 

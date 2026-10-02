@@ -135,6 +135,9 @@ class QuotexMonitorService : Service() {
                             pause = config.searchIntervalMs
                         }
                     }
+                    if (reading.price != null && settings.useChartCandles) {
+                        detectChart(crop, reading, config.candleMs)?.let { coordinator.onChartDetection(it, reading.price) }
+                    }
                     coordinator.onReading(reading)
                 } finally {
                     crop.recycle()
@@ -146,6 +149,22 @@ class QuotexMonitorService : Service() {
                 pause = config.searchIntervalMs
             }
             delay(pause)
+        }
+    }
+
+    /** Reads candles from the chart pixels of this frame. Any failure just means "no chart candles this frame". */
+    private fun detectChart(crop: android.graphics.Bitmap, reading: com.jarvis.assistant.quotex.ocr.QuotexReading, candleMs: Long): com.jarvis.assistant.quotex.ocr.ChartDetection? {
+        return try {
+            val axisLeft = reading.axisLeftX ?: return null
+            val calibration = com.jarvis.assistant.quotex.ocr.PriceAxisCalibration.fit(reading.gridLabels) ?: return null
+            val w = crop.width
+            val h = crop.height
+            val pixels = IntArray(w * h)
+            crop.getPixels(pixels, 0, w, 0, 0, w, h)
+            val rightmost = System.currentTimeMillis() / candleMs * candleMs
+            com.jarvis.assistant.quotex.ocr.ChartCandleDetector().detect(pixels, w, h, (axisLeft - 4).coerceAtLeast(1), calibration, rightmost, candleMs)
+        } catch (e: Exception) {
+            null // e.g. a hardware bitmap that cannot be read: fall back to sampled prices
         }
     }
 

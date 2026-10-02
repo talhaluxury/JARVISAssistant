@@ -219,8 +219,11 @@ class PriceSeries(val candles: List<Candle>) {
     val lows: DoubleArray = DoubleArray(candles.size) { candles[it].low }
     val up: BooleanArray = BooleanArray(candles.size) { candles[it].up }
     val ema9: DoubleArray by lazy { Indicators.ema(closes, 9) }
+    val ema20: DoubleArray by lazy { Indicators.ema(closes, 20) }
     val ema21: DoubleArray by lazy { Indicators.ema(closes, 21) }
     val ema50: DoubleArray by lazy { Indicators.ema(closes, 50) }
+    val ema100: DoubleArray by lazy { Indicators.ema(closes, 100) }
+    val ema200: DoubleArray by lazy { Indicators.ema(closes, 200) }
     val rsi14: DoubleArray by lazy { Indicators.rsi(closes, 14) }
     val percentB: DoubleArray by lazy { Indicators.percentB(closes, 20, 2.0) }
     val bollinger: Triple<DoubleArray, DoubleArray, DoubleArray> by lazy { Indicators.bollingerBands(closes, 20, 2.0) }

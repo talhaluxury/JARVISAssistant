@@ -1,5 +1,6 @@
 package com.jarvis.assistant.quotex.agent
 
+import com.jarvis.assistant.quotex.domain.TimeframePlan
 import com.jarvis.assistant.quotex.analysis.ConfluenceEngine
 import com.jarvis.assistant.quotex.analysis.Indicators
 import com.jarvis.assistant.quotex.analysis.MarketStructure
@@ -197,22 +198,30 @@ class PriceActionConfirmationStrategy : Strategy {
 }
 
 /**
- * Strategy 10: the base timeframe must agree with two resampled higher timeframes ([middleFactor] for
- * momentum, [higherFactor] for context). Disagreement means WAIT, never a forced direction.
+ * Strategy 10: the base timeframe must agree with the resampled middle and higher timeframes of its
+ * [TimeframePlan] (section 4). A level the plan does not have (e.g. nothing above 1H) is simply not used - it is
+ * never invented. With no usable higher level at all the strategy abstains; disagreement means WAIT.
  */
 class MultiTimeframeConfluenceStrategy(
-    private val middleFactor: Int = 4,
-    private val higherFactor: Int = 12
+    private val middleFactor: Int? = 4,
+    private val higherFactor: Int? = 12
 ) : Strategy {
+    constructor(plan: TimeframePlan) : this(plan.middleFactor, plan.higherFactor)
+
     override val name = "Multi-Timeframe Confluence"
     override fun evaluate(series: PriceSeries, trend: TrendState, structure: StructureLabel, volatility: VolatilityState, swings: List<Swing>): StrategyResult {
+        if (middleFactor == null && higherFactor == null) return none(name)
         val baseMs = CandleResampler.inferCandleMs(series.candles) ?: return none(name)
-        val mid = PriceSeries(CandleResampler.resample(series.candles, middleFactor, baseMs))
-        val high = PriceSeries(CandleResampler.resample(series.candles, higherFactor, baseMs))
-        if (mid.size < 30 || high.size < 30) return none(name)
-        val midTrend = MarketStructure.trendLabel(mid)
-        val highTrend = MarketStructure.trendLabel(high)
-        val highStructure = MarketStructure.structureLabel(MarketStructure.swings(high))
+        val mid = middleFactor?.let { PriceSeries(CandleResampler.resample(series.candles, it, baseMs)) }
+        val high = higherFactor?.let { PriceSeries(CandleResampler.resample(series.candles, it, baseMs)) }
+        // Every level that exists must have enough history; otherwise abstain rather than vote on thin data.
+        if ((mid != null && mid.size < MIN_LEVEL_CANDLES) || (high != null && high.size < MIN_LEVEL_CANDLES)) return none(name)
+        // Context level = the highest one available; momentum level = the middle one (or the context if alone).
+        val context = high ?: mid!!
+        val momentum = mid ?: high!!
+        val midTrend = MarketStructure.trendLabel(momentum)
+        val highTrend = MarketStructure.trendLabel(context)
+        val highStructure = MarketStructure.structureLabel(MarketStructure.swings(context))
         val dir = when {
             isUp(highTrend) && isUp(midTrend) -> QuotexDecision.CALL
             isDown(highTrend) && isDown(midTrend) -> QuotexDecision.PUT
@@ -229,13 +238,16 @@ class MultiTimeframeConfluenceStrategy(
         )
         return StrategyResult(name, dir, conditions)
     }
+
+    private companion object { const val MIN_LEVEL_CANDLES = 30 }
 }
 
 /** All ten strategies from the spec. The original four stay first so existing behaviour is unchanged. */
-fun fullStrategyLibrary(): List<Strategy> = defaultStrategies() + listOf(
+fun fullStrategyLibrary(plan: TimeframePlan? = null): List<Strategy> = defaultStrategies() + listOf(
     MomentumConfirmationStrategy(), EmaStructureStrategy(), RsiMacdConfirmationStrategy(),
-    BollingerRegimeStrategy(), PriceActionConfirmationStrategy(), MultiTimeframeConfluenceStrategy()
+    BollingerRegimeStrategy(), PriceActionConfirmationStrategy(),
+    if (plan == null) MultiTimeframeConfluenceStrategy() else MultiTimeframeConfluenceStrategy(plan)
 )
 
-fun fullConfluenceEngine(weights: Map<String, Double> = emptyMap()): ConfluenceEngine =
-    ConfluenceEngine(fullStrategyLibrary(), weights)
+fun fullConfluenceEngine(weights: Map<String, Double> = emptyMap(), plan: TimeframePlan? = null): ConfluenceEngine =
+    ConfluenceEngine(fullStrategyLibrary(plan), weights)
