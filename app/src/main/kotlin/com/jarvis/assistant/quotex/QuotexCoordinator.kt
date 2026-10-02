@@ -166,7 +166,7 @@ class QuotexCoordinator(
         pendingJournal.clear()
         if (forAsset != null) {
             val stored = repository.latestAscending(forAsset, config.maxCandlesKept)
-            candles.addAll(CandleRuns.contiguousTail(stored, config.candleMs))
+            candles.addAll(CandleRuns.contiguousTail(stored, config.candleMs, MAX_GAP_CANDLES))
         }
         rebuildEngineLocked()
         ready = true
@@ -255,7 +255,7 @@ class QuotexCoordinator(
         val name = asset ?: "UNKNOWN"
         repository.insert(name, candle)
         val last = candles.lastOrNull()
-        val gap = last != null && candle.openTimeMs - last.openTimeMs > config.candleMs * 3
+        val gap = last != null && candle.openTimeMs - last.openTimeMs > config.candleMs * (MAX_GAP_CANDLES + 1)
         if (gap) {
             candles.clear()
             engine = QuotexEngine(config)
@@ -514,5 +514,11 @@ class QuotexCoordinator(
 
     private companion object {
         const val ASSET_SWITCH_HITS = 3
+        /**
+         * Missing candles tolerated before the in-memory history is restarted. A few unreadable seconds (the price
+         * chip hiding an axis label, a slow OCR frame) must not wipe everything. The gaps are NOT filled with made-up
+         * candles: the data-quality check still counts them and lowers trust accordingly.
+         */
+        const val MAX_GAP_CANDLES = 5
     }
 }
