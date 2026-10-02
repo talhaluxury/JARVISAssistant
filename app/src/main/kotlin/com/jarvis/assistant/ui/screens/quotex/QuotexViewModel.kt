@@ -259,7 +259,10 @@ class QuotexViewModel(application: Application) : AndroidViewModel(application) 
                 val parsed = withContext(Dispatchers.Default) { QuotexCandleCsv.parse(text) }
                 val added = module.coordinator.restoreCandles(parsed.byAsset)
                 _dataInfo.value = "Restored $added new candles (${parsed.total - added} already existed, " +
-                    "${parsed.rejectedLines.size} invalid lines skipped)."
+                    "${parsed.rejectedLines.size} invalid lines skipped). " +
+                    "Only the newest unbroken run is loaded for analysis: " +
+                    "${module.coordinator.state.value.candleCount} of ${parsed.total} candles. " +
+                    "Older candles stay saved, but gaps in the data split them from the newest run."
                 refreshAnalytics()
             } catch (e: Exception) {
                 _dataInfo.value = "Restore failed: ${e.message ?: "unknown error"}"
