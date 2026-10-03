@@ -98,6 +98,8 @@ class QuotexCoordinator(
     private val chartCandles = LinkedHashMap<Long, Candle>()
     private var chartRefined = 0
     private var chartSeen = 0
+    /** Why the latest chart read was rejected (shown to the user so a failing detector can be diagnosed). */
+    private var chartNote = ""
 
     private val _state = MutableStateFlow(QuotexUiState())
     val state: StateFlow<QuotexUiState> = _state.asStateFlow()
@@ -243,8 +245,15 @@ class QuotexCoordinator(
      */
     suspend fun onChartDetection(detection: com.jarvis.assistant.quotex.ocr.ChartDetection, ocrPrice: Double) {
         mutex.withLock {
-            if (detection.candles.isEmpty() || detection.confidence < CHART_MIN_CONFIDENCE) return@withLock
-            if (!com.jarvis.assistant.quotex.ocr.ChartCandleDetector.agreesWith(detection, ocrPrice, ocrPrice * CHART_PRICE_TOLERANCE)) return@withLock
+            if (detection.candles.isEmpty() || detection.confidence < CHART_MIN_CONFIDENCE) {
+                chartNote = detection.note.ifBlank { "confidence too low" }
+                return@withLock
+            }
+            if (!com.jarvis.assistant.quotex.ocr.ChartCandleDetector.agreesWith(detection, ocrPrice, ocrPrice * CHART_PRICE_TOLERANCE)) {
+                chartNote = "chart close ${detection.candles.last().close} differs from OCR price $ocrPrice"
+                return@withLock
+            }
+            chartNote = ""
             chartSeen++
             for (c in detection.closed) chartCandles[c.openTimeMs] = c
             while (chartCandles.size > CHART_KEEP) chartCandles.remove(chartCandles.keys.first())
@@ -468,7 +477,7 @@ class QuotexCoordinator(
 
     private fun chartStatusText(): String = when {
         !settings.useChartCandles -> "OFF (candles from sampled prices)"
-        chartSeen == 0 -> "no chart candles read yet (sampled prices only)"
+        chartSeen == 0 -> "no chart candles read yet (sampled prices only)" + if (chartNote.isNotBlank()) ": $chartNote" else ""
         else -> "$chartRefined candle(s) refined from chart, $chartSeen frames accepted"
     }
 

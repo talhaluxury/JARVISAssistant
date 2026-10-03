@@ -136,7 +136,7 @@ class QuotexMonitorService : Service() {
                         }
                     }
                     if (reading.price != null && settings.useChartCandles) {
-                        detectChart(crop, reading, config.candleMs)?.let { coordinator.onChartDetection(it, reading.price) }
+                        coordinator.onChartDetection(detectChart(crop, reading, config.candleMs), reading.price)
                     }
                     coordinator.onReading(reading)
                 } finally {
@@ -152,11 +152,13 @@ class QuotexMonitorService : Service() {
         }
     }
 
-    /** Reads candles from the chart pixels of this frame. Any failure just means "no chart candles this frame". */
-    private fun detectChart(crop: android.graphics.Bitmap, reading: com.jarvis.assistant.quotex.ocr.QuotexReading, candleMs: Long): com.jarvis.assistant.quotex.ocr.ChartDetection? {
+    /** Reads candles from the chart pixels of this frame. A failure is returned with its reason, never thrown. */
+    private fun detectChart(crop: android.graphics.Bitmap, reading: com.jarvis.assistant.quotex.ocr.QuotexReading, candleMs: Long): com.jarvis.assistant.quotex.ocr.ChartDetection {
+        fun fail(why: String) = com.jarvis.assistant.quotex.ocr.ChartDetection(emptyList(), 0.0, why)
         return try {
-            val axisLeft = reading.axisLeftX ?: return null
-            val calibration = com.jarvis.assistant.quotex.ocr.PriceAxisCalibration.fit(reading.gridLabels) ?: return null
+            val axisLeft = reading.axisLeftX ?: return fail("price-axis position not found")
+            val calibration = com.jarvis.assistant.quotex.ocr.PriceAxisCalibration.fit(reading.gridLabels)
+                ?: return fail("price scale not calibrated (${reading.gridLabels.size} grid labels, need 3+ on one line)")
             val w = crop.width
             val h = crop.height
             val pixels = IntArray(w * h)
@@ -164,7 +166,7 @@ class QuotexMonitorService : Service() {
             val rightmost = System.currentTimeMillis() / candleMs * candleMs
             com.jarvis.assistant.quotex.ocr.ChartCandleDetector().detect(pixels, w, h, (axisLeft - 4).coerceAtLeast(1), calibration, rightmost, candleMs)
         } catch (e: Exception) {
-            null // e.g. a hardware bitmap that cannot be read: fall back to sampled prices
+            fail("bitmap unreadable (${e.javaClass.simpleName})")
         }
     }
 
