@@ -87,12 +87,29 @@ class ChartCandleDetectorTest {
     }
 
     @Test
-    fun touchingSameColourCandlesAreSplitByTheirBodyHeight() {
-        val s = specs().map { it.copy(c = it.o + 3) } // all green, bodies of different heights
+    fun touchingCandlesOfAlternatingColourAreSeparatedByColour() {
+        val s = specs() // alternating green / red, drawn touching (step == body width)
         val d = ChartCandleDetector().detect(draw(s, bodyW = 7, step = 7), W, H, 300, PriceAxisCalibration.fit(labels), 0L, 60_000L)
         assertEquals(12, d.candles.size)
         assertEquals(s[3].h, d.candles[3].high, 1e-6)
         assertEquals(s[3].o, d.candles[3].open, 1e-6)
+    }
+
+    @Test
+    fun touchingSameColourCandlesAreSplitByWidth() {
+        // 10 separated green candles; candles 4 and 5 touch (one 14px run that is two 7px candles).
+        val s = (0 until 10).map { i -> val base = 60.0 + (i % 5) * 4; Spec(base, base + 6, base - 3, base + 3) }
+        val px = IntArray(W * H) { 0xFF000000.toInt() }
+        var x0 = 10
+        s.forEachIndexed { i, sp ->
+            val cx = x0 + 3
+            for (yy in y(sp.h) until y(sp.l)) px[yy * W + cx] = GREEN
+            for (yy in y(maxOf(sp.o, sp.c)) until y(minOf(sp.o, sp.c))) for (xx in x0 until x0 + 7) px[yy * W + xx] = GREEN
+            x0 += if (i == 4) 7 else 14
+        }
+        val d = ChartCandleDetector().detect(px, W, H, 300, PriceAxisCalibration.fit(labels), 0L, 60_000L)
+        assertEquals(10, d.candles.size)
+        assertEquals(s[5].c, d.candles[5].close, 1e-6)
     }
 
     @Test

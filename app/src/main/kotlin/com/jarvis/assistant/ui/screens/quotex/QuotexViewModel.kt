@@ -131,6 +131,17 @@ class QuotexViewModel(application: Application) : AndroidViewModel(application) 
         module.settings.useChartCandles = enabled // read live by the coordinator and monitor; no history reset needed
     }
 
+    fun autoChartPan(): Boolean = module.settings.autoChartPan
+
+    fun setAutoChartPan(enabled: Boolean) {
+        module.settings.autoChartPan = enabled
+    }
+
+    /** Reads the live chart, scrolls it back in time and saves the older candles (needs monitoring ON). */
+    fun loadChartHistory() {
+        com.jarvis.assistant.quotex.capture.QuotexMonitorService.backfill(getApplication())
+    }
+
     fun setRequireVerifiedEdge(enabled: Boolean) {
         module.settings.requireVerifiedEdge = enabled
         applySettings()

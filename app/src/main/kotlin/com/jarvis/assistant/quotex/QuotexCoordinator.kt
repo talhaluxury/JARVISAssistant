@@ -260,6 +260,22 @@ class QuotexCoordinator(
         }
     }
 
+    /**
+     * Older candles read from the chart after scrolling it back in time. Candles already stored are never
+     * overwritten. Returns how many were new, or -1 when the asset is not known yet (nothing is saved then).
+     */
+    suspend fun importHistory(history: List<Candle>): Int {
+        ensureReady()
+        return mutex.withLock {
+            val name = asset ?: return@withLock -1
+            if (history.isEmpty()) return@withLock 0
+            var added = 0
+            for (c in history) if (repository.insert(name, c)) added++
+            if (added > 0) initialiseLocked(name)
+            added
+        }
+    }
+
     /** Lets the user type the asset when OCR cannot read the name from the chart. */
     suspend fun setAssetManually(name: String) {
         ensureReady()

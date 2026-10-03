@@ -26,3 +26,14 @@ Run the existing workflow or, with Gradle 8.7 installed:
     gradle assembleDebug
 
 The APK output is `app/build/outputs/apk/debug/app-debug.apk`.
+
+## Chart candle reading + history loading (latest)
+- ChartCandleDetector: candles are now found by colour run + width (touching same-colour candles are cut into equal
+  slots; body = rows mostly inked). Fixes "no chart candles read / 0 clean candles".
+- New HistoryStitcher + "LOAD CHART HISTORY" button (Quotex Analyzer screen): reads the live chart, scrolls it back
+  (you drag it, or JARVIS does with "Let JARVIS scroll the chart" ON), stitches overlapping frames by exact open/close
+  match, and saves older candles. Frames without an exact overlap are rejected.
+- The only gesture JARVIS can make on Quotex is JarvisAccessibilityService.panChart: one horizontal drag inside the
+  chart band. Buy/Sell taps and typing stay blocked. Setting is OFF by default.
+- Chart timeframe in Quotex MUST equal JARVIS candle length (Settings -> candle seconds), otherwise candle times are wrong.
+- Not compiled or run on a phone in the authoring session: build it and test on the device.

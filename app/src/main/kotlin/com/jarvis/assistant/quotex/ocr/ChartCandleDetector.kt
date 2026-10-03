@@ -2,6 +2,8 @@ package com.jarvis.assistant.quotex.ocr
 
 import com.jarvis.assistant.quotex.domain.Candle
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 /**
  * Linear map between a screen row (pixels) and a price, fitted to the evenly spaced price-axis labels (section 31).
@@ -83,7 +85,8 @@ class ChartCandleDetector(
      */
     fun detect(
         pixels: IntArray, width: Int, height: Int, plotRight: Int,
-        calibration: PriceAxisCalibration?, rightmostOpenTimeMs: Long, candleMs: Long
+        calibration: PriceAxisCalibration?, rightmostOpenTimeMs: Long, candleMs: Long,
+        rightEdgeOnly: Boolean = true
     ): ChartDetection {
         fun none(why: String) = ChartDetection(emptyList(), 0.0, why)
         if (calibration == null) return none("Price scale could not be calibrated.")
@@ -104,68 +107,101 @@ class ChartCandleDetector(
             c.ink = when { up == 0 && down == 0 -> Ink.NONE; up >= down -> Ink.UP; else -> Ink.DOWN }
         }
 
-        // Runs of consecutive same-coloured columns = one candle each.
-        class Run(val ink: Ink, val x0: Int, var x1: Int)
+        // Runs of consecutive same-coloured columns. One run is one candle, or several touching candles of one colour.
+        class Run(val ink: Ink, val x0: Int, val x1: Int)
         val runs = ArrayList<Run>()
         var x = 0
         while (x < right) {
             val c = cols[x]
             if (c.ink == Ink.NONE) { x++; continue }
-            val run = Run(c.ink, x, x)
-            while (run.x1 + 1 < right && cols[run.x1 + 1].ink == c.ink) run.x1++
-            runs.add(run)
-            x = run.x1 + 1
+            var e = x
+            while (e + 1 < right && cols[e + 1].ink == c.ink) e++
+            runs.add(Run(c.ink, x, e))
+            x = e + 1
         }
-        val split = ArrayList<Run>()
-        for (r in runs) for ((a, b) in splitRun(cols, r.x0, r.x1)) split.add(Run(r.ink, a, b))
-        val wide = split.filter { it.x1 - it.x0 + 1 >= minBodyWidthPx }
-        if (wide.size < minCandles) return none("Only ${wide.size} candles found (need $minCandles).")
+        val sized = runs.filter { it.x1 - it.x0 + 1 >= minBodyWidthPx }
+        if (sized.isEmpty()) return none("No green/red candle bodies found in the chart area (${runs.size} thin shapes only).")
 
-        // Typical single-candle width / spacing: the LOWER quartile, so a few merged (over-wide) runs cannot inflate it.
-        val widths = wide.map { it.x1 - it.x0 + 1 }.sorted()
+        // Typical single-candle width = LOWER quartile of the run widths, so merged (over-wide) runs cannot inflate it.
+        val widths = sized.map { it.x1 - it.x0 + 1 }.sorted()
         val medW = widths[widths.size / 4].toDouble()
-        val allCentres = wide.map { (it.x0 + it.x1) / 2.0 }
-        val sortedGaps = allCentres.zipWithNext { a, b -> b - a }.sorted()
+
+        // A run that is a whole multiple of the typical width is several touching candles: cut it into equal slots.
+        // Runs much narrower than a candle (price tag, line fragments) are junk and ignored.
+        class Slot(val ink: Ink, val x0: Int, val x1: Int) { val centre get() = (x0 + x1) / 2.0 }
+        val slots = ArrayList<Slot?>() // null = a run that is neither one candle nor a clean multiple: a barrier
+        for (r in sized) {
+            val w = r.x1 - r.x0 + 1
+            if (w < medW * 0.6) continue
+            val n = maxOf(1, (w / medW).roundToInt())
+            if (n > 1 && abs(w.toDouble() / n - medW) > medW * 0.35) { slots.add(null); continue }
+            for (i in 0 until n) {
+                val a = r.x0 + (i * w.toDouble() / n).roundToInt()
+                val b = r.x0 + ((i + 1) * w.toDouble() / n).roundToInt() - 1
+                slots.add(Slot(r.ink, a, maxOf(a, b)))
+            }
+        }
+        val real = slots.filterNotNull()
+        if (real.size < minCandles) return none("Only ${real.size} candles found (need $minCandles).")
+        val sortedGaps = real.zipWithNext { a, b -> b.centre - a.centre }.sorted()
         val medGap = sortedGaps[sortedGaps.size / 4]
 
-        // Only the newest candles matter (the one that just closed). Walk in from the right and stop at the first
-        // merged (over-wide) run or the first hole; everything to its left is ignored, never guessed.
-        var firstGood = wide.size
-        for (i in wide.indices.reversed()) {
-            val w = wide[i].x1 - wide[i].x0 + 1
-            if (w > medW * 1.6) break
-            if (i < wide.size - 1 && allCentres[i + 1] - allCentres[i] > medGap * 1.6) break
-            firstGood = i
+        // Only the newest candles matter. Walk in from the right and stop at the first barrier or hole;
+        // everything to its left is ignored, never guessed.
+        val good: List<Slot> = if (rightEdgeOnly) {
+            val goodRev = ArrayList<Slot>()
+            for (i in slots.indices.reversed()) {
+                val s = slots[i] ?: break
+                val prev = goodRev.lastOrNull()
+                if (prev != null && prev.centre - s.centre > medGap * 1.6 + 1.0) break
+                goodRev.add(s)
+            }
+            goodRev.reversed()
+        } else {
+            // History scan: the chart is scrolled back, so the newest candle is not at the right edge.
+            // Take the longest unbroken stretch anywhere in the frame.
+            var best: List<Slot> = emptyList()
+            var cur = ArrayList<Slot>()
+            for (sl in slots) {
+                if (sl == null) { if (cur.size > best.size) best = cur; cur = ArrayList(); continue }
+                val prev = cur.lastOrNull()
+                if (prev != null && sl.centre - prev.centre > medGap * 1.6 + 1.0) { if (cur.size > best.size) best = cur; cur = ArrayList() }
+                cur.add(sl)
+            }
+            if (cur.size > best.size) best = cur
+            best
         }
-        val good = wide.subList(firstGood, wide.size)
-        val centres = allCentres.subList(firstGood, wide.size)
         if (good.size < minCandles) {
             return none(
-                if (firstGood > 0 && good.size < wide.size) "Only ${good.size} clean candles at the right edge (need $minCandles); older ones are merged or have holes."
+                if (good.size < real.size) "Only ${good.size} clean candles at the right edge (need $minCandles); older ones are merged or have holes."
                 else "Only ${good.size} candles found (need $minCandles)."
             )
         }
 
         val candles = ArrayList<Candle>(good.size)
         var uniform = 0
-        for ((i, run) in good.withIndex()) {
-            val w = run.x1 - run.x0 + 1
-            val edgeA = cols[run.x0]
-            val edgeB = cols[run.x1]
-            // Wicks sit in the middle, so the outermost columns hold the body only.
-            val bodyTop = minOf(edgeA.minY, edgeB.minY)
-            val bodyBottom = maxOf(edgeA.maxY, edgeB.maxY) + 1
+        for ((i, slot) in good.withIndex()) {
+            val w = slot.x1 - slot.x0 + 1
+            // Body = rows where most of the slot is inked; wicks are only 1-2 columns wide so they do not count.
+            val need = maxOf(1, ceil(w * 0.6).toInt())
+            var bodyTop = -1; var bodyBottom = -1
+            for (y in 0 until height) {
+                var n = 0
+                for (cx in slot.x0..slot.x1) if (ink(pixels[y * width + cx]) == slot.ink) n++
+                if (n >= need) { if (bodyTop < 0) bodyTop = y; bodyBottom = y + 1 }
+            }
+            if (bodyTop < 0) return none("Candle ${i + 1} has no solid body (spacing or colours not recognised).")
             var wickTop = Int.MAX_VALUE; var wickBottom = -1
-            for (cx in run.x0..run.x1) { wickTop = minOf(wickTop, cols[cx].minY); wickBottom = maxOf(wickBottom, cols[cx].maxY + 1) }
+            for (cx in slot.x0..slot.x1) { wickTop = minOf(wickTop, cols[cx].minY); wickBottom = maxOf(wickBottom, cols[cx].maxY + 1) }
             val hi = calibration.priceAt(wickTop.toDouble())
             val lo = calibration.priceAt(wickBottom.toDouble())
             val top = calibration.priceAt(bodyTop.toDouble())
             val bottom = calibration.priceAt(bodyBottom.toDouble())
-            val (open, close) = if (run.ink == Ink.UP) bottom to top else top to bottom
+            val (open, close) = if (slot.ink == Ink.UP) bottom to top else top to bottom
             val openTime = rightmostOpenTimeMs - (good.size - 1 - i) * candleMs
             candles.add(Candle(openTime, open, maxOf(maxOf(hi, lo), maxOf(open, close)), minOf(minOf(hi, lo), minOf(open, close)), close))
-            val widthOk = abs(w - medW) <= medW * uniformTolerance
-            val gapOk = i == 0 || abs((centres[i] - centres[i - 1]) - medGap) <= medGap * uniformTolerance
+            val widthOk = abs(w - medW) <= maxOf(medW * uniformTolerance, 1.5)
+            val gapOk = i == 0 || abs((slot.centre - good[i - 1].centre) - medGap) <= maxOf(medGap * uniformTolerance, 1.5)
             if (widthOk && gapOk) uniform++
         }
         val uniformity = uniform.toDouble() / good.size
@@ -174,37 +210,6 @@ class ChartCandleDetector(
         if (calibration.priceAt(0.0) < calibration.priceAt((height - 1).toDouble())) return none("Price scale runs the wrong way.")
         val confidence = (uniformity * calibration.rSquared).coerceIn(0.0, 1.0)
         return ChartDetection(candles, confidence, "OK, ${candles.size} candles read from the chart.")
-    }
-
-    /**
-     * Touching candles of the same colour form one wide run. Their bodies usually differ in height, so a run is cut
-     * wherever the vertical extent jumps; a thin column that sticks out past both neighbours is a wick and is glued
-     * back to its own body. Identical neighbouring bodies cannot be told apart and stay merged (-> detector refuses).
-     */
-    private fun splitRun(cols: Array<Column>, x0: Int, x1: Int): List<Pair<Int, Int>> {
-        val tol = 2
-        val segs = ArrayList<IntArray>() // [start, end]
-        var start = x0
-        for (x in x0 + 1..x1) {
-            if (abs(cols[x].minY - cols[x - 1].minY) > tol || abs(cols[x].maxY - cols[x - 1].maxY) > tol) {
-                segs.add(intArrayOf(start, x - 1)); start = x
-            }
-        }
-        segs.add(intArrayOf(start, x1))
-        val out = ArrayList<IntArray>()
-        var i = 0
-        while (i < segs.size) {
-            if (i + 2 < segs.size) {
-                val a = segs[i]; val w = segs[i + 1]; val c = segs[i + 2]
-                val wickWidth = w[1] - w[0] + 1
-                val ca = cols[a[0]]; val cw = cols[w[0]]; val cc = cols[c[0]]
-                val sides = abs(ca.minY - cc.minY) <= tol && abs(ca.maxY - cc.maxY) <= tol
-                val sticksOut = cw.minY <= minOf(ca.minY, cc.minY) + tol && cw.maxY >= maxOf(ca.maxY, cc.maxY) - tol
-                if (wickWidth <= 2 && sides && sticksOut) { out.add(intArrayOf(a[0], c[1])); i += 3; continue }
-            }
-            out.add(segs[i]); i++
-        }
-        return out.map { it[0] to it[1] }
     }
 
     companion object {

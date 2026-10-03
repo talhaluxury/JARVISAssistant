@@ -336,6 +336,25 @@ class JarvisAccessibilityService : AccessibilityService() {
         return dispatchGesture(gesture, null, null)
     }
 
+    /**
+     * The ONLY gesture JARVIS makes on the Quotex chart: one slow horizontal drag inside the chart area, used to
+     * scroll the chart back in time so older candles can be read. It is never a tap and cannot reach Buy/Sell:
+     * it is purely horizontal and confined to the band of the screen above the trade panel.
+     */
+    fun chartPan(x1: Float, x2: Float, y: Float): Boolean {
+        val m = resources.displayMetrics
+        val w = m.widthPixels.toFloat()
+        val h = m.heightPixels.toFloat()
+        if (y < h * 0.15f || y > h * 0.50f) return false
+        if (x1 < w * 0.03f || x1 > w * 0.85f || x2 < w * 0.03f || x2 > w * 0.85f) return false
+        if (kotlin.math.abs(x2 - x1) < w * 0.15f) return false
+        val path = android.graphics.Path().apply { moveTo(x1, y); lineTo(x2, y) }
+        val gesture = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 450))
+            .build()
+        return dispatchGesture(gesture, null, null)
+    }
+
     fun remoteBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
     fun remoteHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
     fun remoteRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
@@ -365,6 +384,9 @@ class JarvisAccessibilityService : AccessibilityService() {
         val isEnabled: Boolean get() = instance != null
 
         /** Immediate (non-queued) system navigation actions — no screen inspection needed for these. */
+        /** Horizontal chart drag for loading Quotex history (see [chartPan] for the limits). */
+        fun panChart(x1: Float, x2: Float, y: Float): Boolean = instance?.chartPan(x1, x2, y) ?: false
+
         fun pressBack(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_BACK) ?: false
         fun pressHome(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_HOME) ?: false
         fun openRecents(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_RECENTS) ?: false

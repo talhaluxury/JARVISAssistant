@@ -19,6 +19,14 @@ class QuotexSettings(context: Context) {
         get() = prefs.getBoolean("use_chart_candles", true)
         set(value) { prefs.edit().putBoolean("use_chart_candles", value).apply() }
 
+    /**
+     * Lets JARVIS scroll the Quotex chart back in time (a horizontal drag inside the chart, nothing else) while it
+     * loads history. Off by default; with it off, "Load chart history" asks YOU to drag the chart instead.
+     */
+    var autoChartPan: Boolean
+        get() = prefs.getBoolean("auto_chart_pan", false)
+        set(value) { prefs.edit().putBoolean("auto_chart_pan", value).apply() }
+
     var candleSeconds: Int
         get() = prefs.getInt("candle_seconds", 60)
         set(value) { prefs.edit().putInt("candle_seconds", value).apply() }
