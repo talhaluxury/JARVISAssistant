@@ -108,6 +108,7 @@ class QuotexMonitorService : Service() {
         var misses = 0
         var tfCandidate = 0
         var tfHits = 0
+        var lastAutoBackfillAt = 0L
 
         coordinator.ensureReady()
         coordinator.setScreenStatus(ScreenStatus.SEARCHING)
@@ -157,6 +158,20 @@ class QuotexMonitorService : Service() {
                     if (reading.price != null && settings.useChartCandles) {
                         val detection = detectChart(crop, reading, config.candleMs)
                         coordinator.onChartDetection(detection, reading.price)
+                        // Fully automatic history: chart readable + too few candles -> load history without any tap.
+                        val ui = coordinator.state.value
+                        val now = System.currentTimeMillis()
+                        if (settings.autoLoadHistory && detection.candles.isNotEmpty() && ui.asset != null &&
+                            ui.candleCount < config.minCandlesForSignal && now - lastAutoBackfillAt > AUTO_BACKFILL_COOLDOWN_MS
+                        ) {
+                            lastAutoBackfillAt = now
+                            if (settings.autoChartPan && com.jarvis.assistant.accessibility.JarvisAccessibilityService.isEnabled) {
+                                coordinator.setMessage("History: only ${ui.candleCount}/${config.minCandlesForSignal} candles - loading chart history automatically...")
+                                backfillRequested = true
+                            } else {
+                                coordinator.setMessage("History is short (${ui.candleCount}/${config.minCandlesForSignal}). Turn ON the JARVIS Accessibility service so it can scroll the chart by itself.")
+                            }
+                        }
                         val seen = timeframeFrom(reading, detection)
                         if (seen != null && seen == tfCandidate) tfHits++ else { tfCandidate = seen ?: 0; tfHits = if (seen != null) 1 else 0 }
                         if (seen != null && tfHits >= TF_HITS_NEEDED && seen != settings.candleSeconds) {
@@ -186,8 +201,8 @@ class QuotexMonitorService : Service() {
         fun fail(why: String) = com.jarvis.assistant.quotex.ocr.ChartDetection(emptyList(), 0.0, why)
         return try {
             val axisLeft = reading.axisLeftX ?: return fail("price-axis position not found")
-            val calibration = com.jarvis.assistant.quotex.ocr.PriceAxisCalibration.fit(reading.gridLabels)
-                ?: return fail("price scale not calibrated (${reading.gridLabels.size} grid labels, need 3+ on one line)")
+            val calibration = com.jarvis.assistant.quotex.ocr.PriceAxisCalibration.fit(reading.gridLabels, minLabels = 2)
+                ?: return fail("price scale not calibrated (${reading.gridLabels.size} grid labels, need 2+ on one line)")
             val w = crop.width
             val h = crop.height
             val pixels = IntArray(w * h)
@@ -396,6 +411,7 @@ class QuotexMonitorService : Service() {
         private const val ACTION_BACKFILL = "com.jarvis.assistant.quotex.BACKFILL"
         private const val TF_HITS_NEEDED = 3
         private val STANDARD_TIMEFRAMES = listOf(5, 10, 15, 30, 60, 120, 180, 300, 600, 900, 1800, 3600)
+        private const val AUTO_BACKFILL_COOLDOWN_MS = 3 * 60_000L
         private const val SEED_WAIT_MS = 40_000L
         private const val MAX_BACKFILL_MS = 150_000L
         private const val MAX_PANS = 40

@@ -27,6 +27,11 @@ class QuotexSettings(context: Context) {
         get() = prefs.getBoolean("auto_chart_pan", true)
         set(value) { prefs.edit().putBoolean("auto_chart_pan", value).apply() }
 
+    /** Starts "load chart history" by itself whenever the chart is readable but too few candles are known. */
+    var autoLoadHistory: Boolean
+        get() = prefs.getBoolean("auto_load_history", true)
+        set(value) { prefs.edit().putBoolean("auto_load_history", value).apply() }
+
     var candleSeconds: Int
         get() = prefs.getInt("candle_seconds", 60)
         set(value) { prefs.edit().putInt("candle_seconds", value).apply() }

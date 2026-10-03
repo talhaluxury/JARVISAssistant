@@ -69,6 +69,47 @@ object GridPriceFinder {
     }
 
     /**
+     * For phones that show only 3 axis numbers (2 grid lines + the live-price chip). The grid lines sit on a
+     * "nice" step (1, 2 or 5 x 10^k, e.g. 0.00020) and are exact multiples of it; the live price is the one label
+     * that is not. Several or zero matches -> null (never a guess).
+     */
+    fun findRoundGrid(labels: List<AxisLabel>, heightTolerance: Float): Double? {
+        val sorted = labels.distinctBy { it.value }.sortedBy { it.value }
+        if (sorted.size < 3) return null
+        var found: AxisLabel? = null
+        for (candidate in sorted) {
+            val grid = sorted.filter { it !== candidate }
+            if (grid.size < 2) continue
+            val diffs = grid.zipWithNext { a, b -> b.value - a.value }
+            val step = diffs.average()
+            if (step <= 0.0 || diffs.any { abs(it - step) > step * 0.02 }) continue
+            if (!isNiceStep(step)) continue
+            if (grid.any { offGrid(it.value, step) > 0.02 }) continue
+            if (offGrid(candidate.value, step) <= 0.05) continue // sits on the grid: cannot be told apart
+            val low = grid.first()
+            val high = grid.last()
+            val slope = (high.y - low.y) / (high.value - low.value).toFloat()
+            val expectedY = low.y + (candidate.value - low.value).toFloat() * slope
+            if (abs(expectedY - candidate.y) > heightTolerance) continue
+            if (found != null) return null // ambiguous
+            found = candidate
+        }
+        return found?.value
+    }
+
+    /** Fraction of one step by which [value] is away from the nearest multiple of [step] (0 = exactly on the grid). */
+    private fun offGrid(value: Double, step: Double): Double {
+        val k = value / step
+        return abs(k - round(k))
+    }
+
+    private fun isNiceStep(step: Double): Boolean {
+        val exp = kotlin.math.floor(kotlin.math.log10(step))
+        val m = step / Math.pow(10.0, exp)
+        return listOf(1.0, 2.0, 2.5, 5.0, 10.0).any { abs(m - it) <= it * 0.02 }
+    }
+
+    /**
      * For charts that only show a few axis numbers (phones): removes each label in turn and asks whether the
      * rest form an evenly spaced grid. The live price is the one label whose removal leaves a perfect grid
      * AND which sits off that grid at the right height. Zero or several matches -> null (never a guess).
@@ -155,10 +196,10 @@ class QuotexScreenParser {
             }
         }
         val assetNote = if (asset == null) "asset name not found" else "asset $asset"
-        if (labels.size < 4) {
+        if (labels.size < 3) {
             return QuotexReading(
                 null, asset,
-                "Only ${labels.size} price-axis numbers readable (need 4+), $assetNote. Show the chart's right-hand price scale, or adjust the screen region in settings.",
+                "Only ${labels.size} price-axis numbers readable (need 3+), $assetNote. Show the chart's right-hand price scale, or adjust the screen region in settings.",
                 labels.size
             )
         }
@@ -168,6 +209,10 @@ class QuotexScreenParser {
         var relaxed = false
         if (price == null) {
             price = GridPriceFinder.findLeaveOneOut(labels, tolerance)
+            relaxed = price != null
+        }
+        if (price == null) {
+            price = GridPriceFinder.findRoundGrid(labels, tolerance)
             relaxed = price != null
         }
         val note = when {

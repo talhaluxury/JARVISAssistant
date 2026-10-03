@@ -124,3 +124,20 @@ class QuotexSelfScreenTest {
         assertNull(QuotexScreenParser().parse(lines, 1080, 2000).asset)
     }
 }
+
+class RoundGridPhoneTest {
+    @org.junit.Test
+    fun threeAxisNumbersGiveLivePrice() {
+        // Phone chart: two grid lines (1.12120, 1.12140) + live chip 1.12162 between/above them.
+        val labels = listOf(
+            AxisLabel(1.12140, 490f), AxisLabel(1.12120, 742f), AxisLabel(1.12162, 240f)
+        )
+        org.junit.Assert.assertEquals(1.12162, GridPriceFinder.findRoundGrid(labels, 40f)!!, 1e-9)
+    }
+
+    @org.junit.Test
+    fun ambiguousThreeNumbersGiveNull() {
+        val labels = listOf(AxisLabel(1.12140, 490f), AxisLabel(1.12120, 742f), AxisLabel(1.12160, 240f))
+        org.junit.Assert.assertNull(GridPriceFinder.findRoundGrid(labels, 40f))
+    }
+}
