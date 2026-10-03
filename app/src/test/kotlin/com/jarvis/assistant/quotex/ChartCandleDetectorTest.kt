@@ -103,6 +103,29 @@ class ChartCandleDetectorTest {
     }
 
     @Test
+    fun aMergedBlockOnTheLeftDoesNotSpoilTheCleanCandlesOnTheRight() {
+        // 6 identical touching candles (cannot be split) on the left, 8 distinct separated candles on the right.
+        val merged = (0 until 6).map { Spec(70.0, 76.0, 66.0, 73.0) }
+        val clean = specs().take(8)
+        val px = IntArray(W * H) { 0xFF000000.toInt() }
+        fun paint(sp: List<Spec>, startX: Int, bodyW: Int, step: Int) {
+            sp.forEachIndexed { i, s ->
+                val x0 = startX + i * step
+                val colour = if (s.c >= s.o) GREEN else RED
+                val cx = x0 + bodyW / 2
+                for (yy in y(s.h) until y(s.l)) px[yy * W + cx] = colour
+                for (yy in y(maxOf(s.o, s.c)) until y(minOf(s.o, s.c))) for (xx in x0 until x0 + bodyW) px[yy * W + xx] = colour
+            }
+        }
+        paint(merged, 10, 7, 7)
+        paint(clean, 100, 7, 14)
+        val d = ChartCandleDetector().detect(px, W, H, 300, PriceAxisCalibration.fit(labels), 5_000_000L, 60_000L)
+        assertEquals(8, d.candles.size)
+        assertEquals(5_000_000L, d.candles.last().openTimeMs)
+        assertEquals(clean.last().c, d.candles.last().close, 1e-6)
+    }
+
+    @Test
     fun crossCheckAgainstOcrPrice() {
         val d = ChartCandleDetector().detect(draw(specs()), W, H, 300, PriceAxisCalibration.fit(labels), 0L, 60_000L)
         val last = d.candles.last().close

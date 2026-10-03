@@ -57,7 +57,7 @@ data class ChartDetection(val candles: List<Candle>, val confidence: Double, val
  * real screenshots; until then use [agreesWith] to cross-check against the OCR live price.
  */
 class ChartCandleDetector(
-    private val minCandles: Int = 8,
+    private val minCandles: Int = 5,
     private val minBodyWidthPx: Int = 3,
     private val colourMargin: Int = 60,
     private val uniformTolerance: Double = 0.30
@@ -121,16 +121,34 @@ class ChartCandleDetector(
         val wide = split.filter { it.x1 - it.x0 + 1 >= minBodyWidthPx }
         if (wide.size < minCandles) return none("Only ${wide.size} candles found (need $minCandles).")
 
+        // Typical single-candle width / spacing: the LOWER quartile, so a few merged (over-wide) runs cannot inflate it.
         val widths = wide.map { it.x1 - it.x0 + 1 }.sorted()
-        val medW = widths[widths.size / 2].toDouble()
-        val centres = wide.map { (it.x0 + it.x1) / 2.0 }
-        val gaps = centres.zipWithNext { a, b -> b - a }.sorted()
-        val medGap = gaps[gaps.size / 2]
-        if (wide.any { (it.x1 - it.x0 + 1) > medW * 1.6 }) return none("Adjacent candles merged; zoom the chart in.")
+        val medW = widths[widths.size / 4].toDouble()
+        val allCentres = wide.map { (it.x0 + it.x1) / 2.0 }
+        val sortedGaps = allCentres.zipWithNext { a, b -> b - a }.sorted()
+        val medGap = sortedGaps[sortedGaps.size / 4]
 
-        val candles = ArrayList<Candle>(wide.size)
+        // Only the newest candles matter (the one that just closed). Walk in from the right and stop at the first
+        // merged (over-wide) run or the first hole; everything to its left is ignored, never guessed.
+        var firstGood = wide.size
+        for (i in wide.indices.reversed()) {
+            val w = wide[i].x1 - wide[i].x0 + 1
+            if (w > medW * 1.6) break
+            if (i < wide.size - 1 && allCentres[i + 1] - allCentres[i] > medGap * 1.6) break
+            firstGood = i
+        }
+        val good = wide.subList(firstGood, wide.size)
+        val centres = allCentres.subList(firstGood, wide.size)
+        if (good.size < minCandles) {
+            return none(
+                if (firstGood > 0 && good.size < wide.size) "Only ${good.size} clean candles at the right edge (need $minCandles); older ones are merged or have holes."
+                else "Only ${good.size} candles found (need $minCandles)."
+            )
+        }
+
+        val candles = ArrayList<Candle>(good.size)
         var uniform = 0
-        for ((i, run) in wide.withIndex()) {
+        for ((i, run) in good.withIndex()) {
             val w = run.x1 - run.x0 + 1
             val edgeA = cols[run.x0]
             val edgeB = cols[run.x1]
@@ -144,13 +162,13 @@ class ChartCandleDetector(
             val top = calibration.priceAt(bodyTop.toDouble())
             val bottom = calibration.priceAt(bodyBottom.toDouble())
             val (open, close) = if (run.ink == Ink.UP) bottom to top else top to bottom
-            val openTime = rightmostOpenTimeMs - (wide.size - 1 - i) * candleMs
+            val openTime = rightmostOpenTimeMs - (good.size - 1 - i) * candleMs
             candles.add(Candle(openTime, open, maxOf(maxOf(hi, lo), maxOf(open, close)), minOf(minOf(hi, lo), minOf(open, close)), close))
             val widthOk = abs(w - medW) <= medW * uniformTolerance
             val gapOk = i == 0 || abs((centres[i] - centres[i - 1]) - medGap) <= medGap * uniformTolerance
             if (widthOk && gapOk) uniform++
         }
-        val uniformity = uniform.toDouble() / wide.size
+        val uniformity = uniform.toDouble() / good.size
         if (uniformity < 0.8) return none("Candle spacing is ragged (${(uniformity * 100).toInt()}% regular).")
         // Higher price must be higher on screen (smaller y); a flipped fit means the axis was misread.
         if (calibration.priceAt(0.0) < calibration.priceAt((height - 1).toDouble())) return none("Price scale runs the wrong way.")

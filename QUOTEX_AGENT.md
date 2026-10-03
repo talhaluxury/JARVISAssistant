@@ -66,3 +66,5 @@ into `NewsRiskFilter` yourself; without them news risk shows UNAVAILABLE), no or
 - Real Quotex screenshots showed thin, touching same-colour candles ("Adjacent candles merged"). `ChartCandleDetector` now cuts a same-colour
   run wherever the body height jumps (gluing the wick column back to its body), and ignores anti-aliased edge pixels (brighter colour thresholds).
   Identical neighbouring bodies stay merged and are refused. The "CHART:" status line shows the reason when a read is rejected.
+- Detector no longer refuses the whole chart when some candles are merged: it uses only the clean, evenly spaced candles at the right edge
+  (>= 5), stopping at the first over-wide run or hole. Older merged candles are ignored, never guessed.
