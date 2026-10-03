@@ -59,7 +59,7 @@ data class ChartDetection(val candles: List<Candle>, val confidence: Double, val
 class ChartCandleDetector(
     private val minCandles: Int = 8,
     private val minBodyWidthPx: Int = 3,
-    private val colourMargin: Int = 40,
+    private val colourMargin: Int = 60,
     private val uniformTolerance: Double = 0.30
 ) {
     private enum class Ink { UP, DOWN, NONE }
@@ -69,8 +69,8 @@ class ChartCandleDetector(
         val g = (argb shr 8) and 0xFF
         val b = argb and 0xFF
         return when {
-            g > r + colourMargin && g > b + colourMargin / 2 -> Ink.UP
-            r > g + colourMargin && r > b + colourMargin -> Ink.DOWN
+            g >= MIN_BRIGHT_UP && g > r + colourMargin && g > b + colourMargin / 2 -> Ink.UP
+            r >= MIN_BRIGHT_DOWN && r > g + colourMargin && r > b + colourMargin -> Ink.DOWN
             else -> Ink.NONE
         }
     }
@@ -116,7 +116,9 @@ class ChartCandleDetector(
             runs.add(run)
             x = run.x1 + 1
         }
-        val wide = runs.filter { it.x1 - it.x0 + 1 >= minBodyWidthPx }
+        val split = ArrayList<Run>()
+        for (r in runs) for ((a, b) in splitRun(cols, r.x0, r.x1)) split.add(Run(r.ink, a, b))
+        val wide = split.filter { it.x1 - it.x0 + 1 >= minBodyWidthPx }
         if (wide.size < minCandles) return none("Only ${wide.size} candles found (need $minCandles).")
 
         val widths = wide.map { it.x1 - it.x0 + 1 }.sorted()
@@ -156,7 +158,41 @@ class ChartCandleDetector(
         return ChartDetection(candles, confidence, "OK, ${candles.size} candles read from the chart.")
     }
 
+    /**
+     * Touching candles of the same colour form one wide run. Their bodies usually differ in height, so a run is cut
+     * wherever the vertical extent jumps; a thin column that sticks out past both neighbours is a wick and is glued
+     * back to its own body. Identical neighbouring bodies cannot be told apart and stay merged (-> detector refuses).
+     */
+    private fun splitRun(cols: Array<Column>, x0: Int, x1: Int): List<Pair<Int, Int>> {
+        val tol = 2
+        val segs = ArrayList<IntArray>() // [start, end]
+        var start = x0
+        for (x in x0 + 1..x1) {
+            if (abs(cols[x].minY - cols[x - 1].minY) > tol || abs(cols[x].maxY - cols[x - 1].maxY) > tol) {
+                segs.add(intArrayOf(start, x - 1)); start = x
+            }
+        }
+        segs.add(intArrayOf(start, x1))
+        val out = ArrayList<IntArray>()
+        var i = 0
+        while (i < segs.size) {
+            if (i + 2 < segs.size) {
+                val a = segs[i]; val w = segs[i + 1]; val c = segs[i + 2]
+                val wickWidth = w[1] - w[0] + 1
+                val ca = cols[a[0]]; val cw = cols[w[0]]; val cc = cols[c[0]]
+                val sides = abs(ca.minY - cc.minY) <= tol && abs(ca.maxY - cc.maxY) <= tol
+                val sticksOut = cw.minY <= minOf(ca.minY, cc.minY) + tol && cw.maxY >= maxOf(ca.maxY, cc.maxY) - tol
+                if (wickWidth <= 2 && sides && sticksOut) { out.add(intArrayOf(a[0], c[1])); i += 3; continue }
+            }
+            out.add(segs[i]); i++
+        }
+        return out.map { it[0] to it[1] }
+    }
+
     companion object {
+        private const val MIN_BRIGHT_UP = 110
+        private const val MIN_BRIGHT_DOWN = 140
+
         /** True when the forming candle's close matches the OCR live price within [tolerance] (absolute price units). */
         fun agreesWith(detection: ChartDetection, ocrLivePrice: Double, tolerance: Double): Boolean {
             val last = detection.candles.lastOrNull() ?: return false

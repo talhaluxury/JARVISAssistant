@@ -87,8 +87,18 @@ class ChartCandleDetectorTest {
     }
 
     @Test
-    fun refusesWhenCandlesTouchAndMerge() {
-        val d = ChartCandleDetector().detect(draw(specs().map { it.copy(c = it.o + 3) }, bodyW = 7, step = 7), W, H, 300, PriceAxisCalibration.fit(labels), 0L, 60_000L)
+    fun touchingSameColourCandlesAreSplitByTheirBodyHeight() {
+        val s = specs().map { it.copy(c = it.o + 3) } // all green, bodies of different heights
+        val d = ChartCandleDetector().detect(draw(s, bodyW = 7, step = 7), W, H, 300, PriceAxisCalibration.fit(labels), 0L, 60_000L)
+        assertEquals(12, d.candles.size)
+        assertEquals(s[3].h, d.candles[3].high, 1e-6)
+        assertEquals(s[3].o, d.candles[3].open, 1e-6)
+    }
+
+    @Test
+    fun identicalTouchingCandlesCannotBeSeparatedAndAreRefused() {
+        val same = (0 until 12).map { Spec(70.0, 76.0, 66.0, 73.0) }
+        val d = ChartCandleDetector().detect(draw(same, bodyW = 7, step = 7), W, H, 300, PriceAxisCalibration.fit(labels), 0L, 60_000L)
         assertTrue(d.candles.isEmpty())
     }
 

@@ -61,3 +61,8 @@ into `NewsRiskFilter` yourself; without them news risk shows UNAVAILABLE), no or
 - Accessibility service refuses tap/long-press/type/swipe while a window whose package contains "quotex" is in the foreground.
   (A browser tab showing Quotex cannot be detected this way.)
 - EMA100/200 were already used by EMA Structure; it now reads `series.ema100/ema200`.
+
+## Update 3: chart detector (not tested on real pixels)
+- Real Quotex screenshots showed thin, touching same-colour candles ("Adjacent candles merged"). `ChartCandleDetector` now cuts a same-colour
+  run wherever the body height jumps (gluing the wick column back to its body), and ignores anti-aliased edge pixels (brighter colour thresholds).
+  Identical neighbouring bodies stay merged and are refused. The "CHART:" status line shows the reason when a read is rejected.
