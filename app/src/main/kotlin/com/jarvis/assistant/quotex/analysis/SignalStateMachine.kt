@@ -2,13 +2,13 @@ package com.jarvis.assistant.quotex.analysis
 
 import com.jarvis.assistant.trading.QuotexDecision
 
-enum class SignalState { SCANNING, WATCHLIST, PRE_CONFIRMATION, CONFIRMED_SETUP, EXPIRED, INVALIDATED, NO_TRADE }
+enum class SignalState { SCANNING, WAITING, WATCHLIST, PRE_CONFIRMATION, CONFIRMED_SETUP, EXPIRED, INVALIDATED, NO_TRADE }
 
 data class SignalStateReading(val state: SignalState, val direction: QuotexDecision, val candlesInState: Int)
 
 /**
  * Turns a stream of [ConfluenceResult]s into a state, so a setup is never displayed as if it were still
- * fresh: SCANNING never jumps straight to CONFIRMED_SETUP, a flip in direction INVALIDATES the setup, and a
+ * fresh: SCANNING never jumps straight to CONFIRMED_SETUP (it goes via WAITING / WATCHLIST / PRE_CONFIRMATION), a flip in direction INVALIDATES the setup, and a
  * setup that has sat unresolved too long EXPIREs rather than staying on screen forever.
  */
 class SignalStateMachine(private val maxCandlesConfirmed: Int = 6) {
@@ -25,7 +25,9 @@ class SignalStateMachine(private val maxCandlesConfirmed: Int = 6) {
         val sameDirection = confluence.direction == direction && direction != QuotexDecision.WAIT
 
         when (confluence.quality) {
-            SetupQuality.NO_SETUP, SetupQuality.WEAK_SETUP -> transition(SignalState.SCANNING, QuotexDecision.WAIT)
+            SetupQuality.NO_SETUP -> transition(SignalState.SCANNING, QuotexDecision.WAIT)
+            // Faint evidence in one direction: not a watchlist entry yet, JARVIS is waiting for more to line up.
+            SetupQuality.WEAK_SETUP -> if (state == SignalState.WAITING) candlesInState++ else transition(SignalState.WAITING, QuotexDecision.WAIT)
 
             SetupQuality.WATCH -> {
                 if (state == SignalState.WATCHLIST && sameDirection) {

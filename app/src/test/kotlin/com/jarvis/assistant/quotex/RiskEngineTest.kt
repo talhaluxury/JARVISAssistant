@@ -155,3 +155,24 @@ class RiskEngineTest {
         assertFalse(reason.contains("\$"))
     }
 }
+
+class RiskLimitsTest {
+    private var now = 1_700_000_000_000L
+
+    @Test
+    fun hourlyFrequencyLimitPausesAndLiftsAsTimePasses() {
+        val e = RiskEngine(RiskConfig(1.0, 100.0, 100, maxTradesPerDay = 100, maxTradesPerHour = 3, maxDailyExposure = 1000.0)) { now }
+        repeat(3) { e.record(true, 0.85) }
+        assertEquals(RiskState.PAUSED_TRADE_FREQUENCY, e.snapshot().state)
+        now += 61 * 60_000L
+        assertEquals(RiskState.ACTIVE, e.snapshot().state)
+    }
+
+    @Test
+    fun exposureLimitPausesForTheDay() {
+        val e = RiskEngine(RiskConfig(2.0, 100.0, 100, maxTradesPerDay = 100, maxTradesPerHour = 100, maxDailyExposure = 6.0)) { now }
+        repeat(3) { e.record(true, 0.85) }
+        assertEquals(RiskState.PAUSED_EXPOSURE_LIMIT, e.snapshot().state)
+        assertEquals(6.0, e.snapshot().exposureToday, 1e-9)
+    }
+}

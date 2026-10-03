@@ -2,7 +2,7 @@ package com.jarvis.assistant.quotex.risk
 
 import java.util.TimeZone
 
-enum class RiskState { ACTIVE, PAUSED_DAILY_LOSS, PAUSED_CONSECUTIVE_LOSSES, PAUSED_BY_USER }
+enum class RiskState { ACTIVE, PAUSED_DAILY_LOSS, PAUSED_CONSECUTIVE_LOSSES, PAUSED_TRADE_FREQUENCY, PAUSED_EXPOSURE_LIMIT, PAUSED_BY_USER }
 
 /**
  * User-declared numbers only - never inferred, never auto-adjusted. [stakePerTrade] and [dailyLossLimit]
@@ -12,12 +12,19 @@ enum class RiskState { ACTIVE, PAUSED_DAILY_LOSS, PAUSED_CONSECUTIVE_LOSSES, PAU
 data class RiskConfig(
     val stakePerTrade: Double = 1.0,
     val dailyLossLimit: Double = 5.0,
-    val maxConsecutiveLosses: Int = 3
+    val maxConsecutiveLosses: Int = 3,
+    /** Trade-frequency limits (section 25): stops over-trading. Counted from setups shown as taken, never auto-adjusted. */
+    val maxTradesPerDay: Int = 30,
+    val maxTradesPerHour: Int = 10,
+    /** Most total stake the user is willing to put at risk in one day (stake x trades), in the same units as [stakePerTrade]. */
+    val maxDailyExposure: Double = 50.0
 ) {
     init {
         require(stakePerTrade > 0.0) { "stakePerTrade must be positive" }
         require(dailyLossLimit > 0.0) { "dailyLossLimit must be positive" }
         require(maxConsecutiveLosses >= 1) { "maxConsecutiveLosses must be at least 1" }
+        require(maxTradesPerDay >= 1 && maxTradesPerHour >= 1) { "trade limits must be at least 1" }
+        require(maxDailyExposure > 0.0) { "maxDailyExposure must be positive" }
     }
 }
 
@@ -28,12 +35,16 @@ data class RiskSnapshot(
     val tradesToday: Int,
     val winsToday: Int,
     val lossesToday: Int,
-    val config: RiskConfig
+    val config: RiskConfig,
+    val tradesLastHour: Int = 0,
+    val exposureToday: Double = 0.0
 ) {
     val paused: Boolean get() = state != RiskState.ACTIVE
     val reason: String? get() = when (state) {
         RiskState.PAUSED_DAILY_LOSS -> "Daily loss limit reached (P/L ${round2(dailyPnL)} vs limit -${round2(config.dailyLossLimit)})."
         RiskState.PAUSED_CONSECUTIVE_LOSSES -> "$consecutiveLosses losses in a row (limit ${config.maxConsecutiveLosses})."
+        RiskState.PAUSED_TRADE_FREQUENCY -> "Too many trades: $tradesToday today (limit ${config.maxTradesPerDay}), $tradesLastHour in the last hour (limit ${config.maxTradesPerHour})."
+        RiskState.PAUSED_EXPOSURE_LIMIT -> "Daily exposure limit reached (${round2(exposureToday)} of ${round2(config.maxDailyExposure)} staked)."
         RiskState.PAUSED_BY_USER -> "Paused by you."
         RiskState.ACTIVE -> null
     }
@@ -59,6 +70,7 @@ class RiskEngine(
     private var winsToday = 0
     private var lossesToday = 0
     private var userPaused = false
+    private val tradeTimes = java.util.ArrayDeque<Long>()
 
     fun updateConfig(newConfig: RiskConfig) {
         config = newConfig
@@ -87,6 +99,7 @@ class RiskEngine(
         rolloverIfNewDay()
         if (snapshot().paused) return
         tradesToday++
+        tradeTimes.addLast(clock())
         if (won) {
             winsToday++
             consecutiveLosses = 0
@@ -100,13 +113,19 @@ class RiskEngine(
 
     fun snapshot(): RiskSnapshot {
         rolloverIfNewDay()
+        val cutoff = clock() - 3_600_000L
+        while (tradeTimes.isNotEmpty() && tradeTimes.first() < cutoff) tradeTimes.removeFirst()
+        val lastHour = tradeTimes.size
+        val exposure = tradesToday * config.stakePerTrade
         val state = when {
             userPaused -> RiskState.PAUSED_BY_USER
             dailyPnL <= -config.dailyLossLimit -> RiskState.PAUSED_DAILY_LOSS
             consecutiveLosses >= config.maxConsecutiveLosses -> RiskState.PAUSED_CONSECUTIVE_LOSSES
+            tradesToday >= config.maxTradesPerDay || lastHour >= config.maxTradesPerHour -> RiskState.PAUSED_TRADE_FREQUENCY
+            exposure >= config.maxDailyExposure -> RiskState.PAUSED_EXPOSURE_LIMIT
             else -> RiskState.ACTIVE
         }
-        return RiskSnapshot(state, dailyPnL, consecutiveLosses, tradesToday, winsToday, lossesToday, config)
+        return RiskSnapshot(state, dailyPnL, consecutiveLosses, tradesToday, winsToday, lossesToday, config, lastHour, exposure)
     }
 
     /** Only the daily counters roll over at day change; a losing streak spanning midnight still counts. */
@@ -118,6 +137,7 @@ class RiskEngine(
             tradesToday = 0
             winsToday = 0
             lossesToday = 0
+            tradeTimes.clear()
         }
     }
 

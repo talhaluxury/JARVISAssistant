@@ -31,10 +31,35 @@ class AgentRuntime(
 
     fun journal(): QuotexJournal = journal
 
-    /** Wins/losses of every resolved journal entry (real and paper) - the evidence the edge gate looks at. */
-    fun evidence(): HistoricalEvidence {
+    private companion object { const val LIVE_VETO_SAMPLES = 30 }
+
+    /** Untouched out-of-sample record of the last walk-forward backtest (sections 18-20); null until one has run. */
+    @Volatile private var backtestEvidence: HistoricalEvidence? = null
+
+    /** Feeds a finished walk-forward report to the edge gate. Only the OUT-OF-SAMPLE segment counts, never train/validation. */
+    fun setBacktest(report: AgentBacktestReport?) {
+        backtestEvidence = report?.outOfSample?.let { HistoricalEvidence(it.wins + it.losses, it.wins) }
+    }
+
+    fun hasBacktestEvidence(): Boolean = backtestEvidence != null
+
+    /** Wins/losses of every resolved journal entry (real and paper): what live running has actually produced. */
+    fun liveEvidence(): HistoricalEvidence {
         val resolved = journal.last(500).filter { it.outcome == JournalOutcome.WIN || it.outcome == JournalOutcome.LOSS }
         return HistoricalEvidence(resolved.size, resolved.count { it.outcome == JournalOutcome.WIN })
+    }
+
+    /**
+     * Evidence the edge gate looks at: the walk-forward out-of-sample record when a backtest has run, otherwise the
+     * live record. They are never pooled (the backtest replays the same candles the live journal saw).
+     */
+    fun evidence(): HistoricalEvidence = backtestEvidence ?: liveEvidence()
+
+    /** Live results clearly below break-even veto the backtest's verdict (strategy degradation, section 35). */
+    private fun liveDegraded(): Boolean {
+        val live = liveEvidence()
+        val acc = live.accuracy ?: return false
+        return backtestEvidence != null && live.samples >= LIVE_VETO_SAMPLES && acc < config.breakEven
     }
 
     fun onCandleClosed(
@@ -47,8 +72,16 @@ class AgentRuntime(
     ): AgentSnapshot {
         resolvePending(candles)
         val evidence = evidence()
-        val edge = EdgeTest.check(evidence, config.breakEven, config.edgeMinSamples, config.edgeZThreshold)
-        val raw = analyzer.analyze(candles, nowMs, ocrConfidence, evidence, weights, riskPausedReason)
+        val rawEdge = EdgeTest.check(evidence, config.breakEven, config.edgeMinSamples, config.edgeZThreshold)
+        val edge = rawEdge.copy(summary = (if (backtestEvidence != null) "Walk-forward out-of-sample: " else "Live journal: ") + rawEdge.summary)
+        var raw = analyzer.analyze(candles, nowMs, ocrConfidence, evidence, weights, riskPausedReason)
+        if (raw.status == AgentStatus.SETUP_DETECTED && config.requireVerifiedEdge && liveDegraded()) {
+            val live = liveEvidence()
+            raw = raw.copy(
+                status = AgentStatus.WATCH,
+                reasons = listOf("Live results (${live.hits}/${live.samples}) are below break-even, which overrides the backtest. No setup shown until they recover.") + raw.reasons
+            )
+        }
 
         // Paper tracking: a candidate that passed every gate except the edge gate is recorded so evidence can build up.
         val edgeBlocked = raw.checks.any { it.step == "Historical performance" && !it.passed }

@@ -139,7 +139,17 @@ class JarvisAccessibilityService : AccessibilityService() {
         is AutomationStep.Swipe -> "SWIPE ${step.direction}"
     }
 
+    /**
+     * JARVIS only ever observes the Quotex trading screen (section 33): it never taps, types or swipes there, so it can
+     * never place or confirm a trade. Every input primitive below refuses while a Quotex window is in the foreground.
+     */
+    private fun quotexInForeground(): Boolean {
+        val pkg = try { rootInActiveWindow?.packageName?.toString() } catch (e: Exception) { null } ?: return false
+        return pkg.contains("quotex", ignoreCase = true)
+    }
+
     private fun tapNode(node: AccessibilityNodeInfo?): Boolean {
+        if (quotexInForeground()) return false
         var target = node ?: return false
         var hops = 0
         while (!target.isClickable && target.parent != null && hops < 8) {
@@ -150,6 +160,7 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     private fun longPressNode(node: AccessibilityNodeInfo?): Boolean {
+        if (quotexInForeground()) return false
         var target = node ?: return false
         var hops = 0
         while (!target.isLongClickable && target.parent != null && hops < 8) {
@@ -233,6 +244,7 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     private fun typeInto(root: AccessibilityNodeInfo, text: String): Boolean {
+        if (quotexInForeground()) return false
         val field = findFocusedEditable(root) ?: findFirstEditable(root) ?: return false
         if (!field.isFocused) field.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val args = Bundle().apply {
@@ -288,6 +300,7 @@ class JarvisAccessibilityService : AccessibilityService() {
      * other node-action steps already treat as "handled" — real verification still happens one
      * level up, in TaskEngine, by checking the actual screen state after the step runs. */
     private fun performSwipe(direction: SwipeDirection): Boolean {
+        if (quotexInForeground()) return false
         val metrics = resources.displayMetrics
         val w = metrics.widthPixels.toFloat()
         val h = metrics.heightPixels.toFloat()
@@ -305,6 +318,7 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     fun remoteTap(x: Float, y: Float): Boolean {
+        if (quotexInForeground()) return false
         val metrics = resources.displayMetrics
         val path = android.graphics.Path().apply { moveTo(x.coerceIn(0f, metrics.widthPixels.toFloat()), y.coerceIn(0f, metrics.heightPixels.toFloat())) }
         val gesture = android.accessibilityservice.GestureDescription.Builder()
@@ -314,6 +328,7 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     fun remoteSwipe(x1: Float, y1: Float, x2: Float, y2: Float): Boolean {
+        if (quotexInForeground()) return false
         val path = android.graphics.Path().apply { moveTo(x1, y1); lineTo(x2, y2) }
         val gesture = android.accessibilityservice.GestureDescription.Builder()
             .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 300))

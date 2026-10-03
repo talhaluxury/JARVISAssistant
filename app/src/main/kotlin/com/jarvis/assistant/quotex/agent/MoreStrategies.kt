@@ -73,11 +73,11 @@ class EmaStructureStrategy : Strategy {
             StrategyCondition("EMA21 sloping the same way", if (up) e21 > series.ema21[i - slopeBars] else e21 < series.ema21[i - slopeBars], "slope over $slopeBars candles")
         )
         if (series.size >= 120) {
-            val e100 = Indicators.ema(series.closes, 100)[i]
+            val e100 = series.ema100[i]
             if (!e100.isNaN()) conditions.add(StrategyCondition("EMA50 beyond EMA100", if (up) e50 > e100 else e50 < e100, "100=$e100"))
         }
         if (series.size >= 220) {
-            val e200 = Indicators.ema(series.closes, 200)[i]
+            val e200 = series.ema200[i]
             if (!e200.isNaN()) conditions.add(StrategyCondition("Price beyond EMA200", if (up) price > e200 else price < e200, "200=$e200"))
         }
         conditions.add(StrategyCondition("Trend filter agrees", if (up) isUp(trend) else isDown(trend), trend.name))

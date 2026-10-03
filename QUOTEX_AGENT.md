@@ -47,3 +47,17 @@ into `NewsRiskFilter` yourself; without them news risk shows UNAVAILABLE), no or
   `ChartRefiner` lets a chart candle replace the sampled one ONLY when open/close agree (0.03%) and wicks are sane.
   Otherwise sampled candles are used unchanged. Switch: Quotex setup -> "Read real candle highs/lows from the chart image".
   Colours (Quotex green/red) and thresholds are untested on real screenshots - check "Chart candles:" status line.
+
+## Update 2: duplicates merged, backtest -> live gate, small items (NOT compiled or test-run)
+
+- Removed the dead duplicates `analysis/PriceAction.kt`, `analysis/Regime.kt`, `analysis/NewsRisk.kt`; `agent/` versions are the only ones.
+- Edge gate: `QuotexCoordinator` re-runs `AgentBacktester` every 100 closed candles (last 1200 candles, step = 2 x expiry) and gives only
+  the OUT-OF-SAMPLE segment to `AgentRuntime.setBacktest`. The gate uses it instead of the live journal (never pooled: same candles).
+  Live results below break-even over >= 30 resolved setups veto the backtest (setup downgraded to WATCH). The gate still needs
+  `edgeMinSamples` (100) OOS setups and z >= 2.33, so it stays closed on short histories - by design.
+- State machine: new WAITING state (weak evidence). Risk engine: max trades/day, max trades/hour, max daily stake exposure
+  (settings keys `max_trades_day`, `max_trades_hour`, `max_daily_exposure`, no UI sliders yet).
+- Dashboard: new MARKET REGIME panel (regime, session, news, strategies allowed by `RegimeGate`).
+- Accessibility service refuses tap/long-press/type/swipe while a window whose package contains "quotex" is in the foreground.
+  (A browser tab showing Quotex cannot be detected this way.)
+- EMA100/200 were already used by EMA Structure; it now reads `series.ema100/ema200`.

@@ -204,6 +204,23 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
             }
         }
 
+        Panel("MARKET REGIME") {
+            val r = state.agent?.report
+            if (r == null) {
+                Text("No regime read yet.", color = Muted, fontSize = 12.sp)
+            } else {
+                Mono("Regime ${r.regime.name}  ·  Trend ${r.trend.name}")
+                Mono("Structure ${r.structure.name}  ·  Volatility ${r.volatility.name}")
+                Mono("Session ${r.session.name}  ·  News risk ${r.newsRisk.name}")
+                val allowed = com.jarvis.assistant.quotex.agent.fullStrategyLibrary().map { it.name }
+                    .filter { com.jarvis.assistant.quotex.agent.RegimeGate.allows(it, r.regime) }
+                Text(
+                    if (allowed.isEmpty()) "No strategy is allowed in this regime." else "Allowed here: " + allowed.joinToString(", "),
+                    color = Muted, fontSize = 10.sp
+                )
+                Text("Past regime performance is not a guarantee.", color = Muted, fontSize = 10.sp)
+            }
+        }
         Panel("CONFLUENCE / SETUP") {
             val c = state.confluence
             if (c == null) {
@@ -362,6 +379,8 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
                 risk.reason?.let { Text(it, color = Warn, fontSize = 11.sp) }
                 Mono("Today: ${risk.winsToday}W / ${risk.lossesToday}L (${risk.tradesToday} tracked)  ·  P/L ${Fmt.num(risk.dailyPnL, 2)}")
                 Mono("Losses in a row: ${risk.consecutiveLosses}  (pause at ${risk.config.maxConsecutiveLosses})")
+                Mono("Trades: ${risk.tradesToday}/${risk.config.maxTradesPerDay} today, ${risk.tradesLastHour}/${risk.config.maxTradesPerHour} this hour")
+                Mono("Exposure: ${Fmt.num(risk.exposureToday, 2)} of ${Fmt.num(risk.config.maxDailyExposure, 2)} staked today")
             }
             Text(
                 "Tracks a stake YOU declare against JARVIS's resolved signals only. It pauses JARVIS's own displayed setups " +

@@ -83,6 +83,9 @@ class QuotexCoordinator(
 
     /** Section 26: SIMULATION until the user turns live analysis on. */
     private var agentRuntime = AgentRuntime(buildAgentConfig(), agentJournal)
+    /** Candles closed since the last walk-forward refresh of the edge gate's evidence. */
+    private var candlesSinceBacktest = 0
+    private var lastAgentBacktest: AgentBacktestReport? = null
     private var builder = CandleBuilder(config.candleSeconds)
     private val candles = ArrayList<Candle>()
     private val liveOutcomes = ArrayList<CallOutcome>()
@@ -162,6 +165,8 @@ class QuotexCoordinator(
     private suspend fun initialiseLocked(forAsset: String?) {
         config = settings.config()
         agentRuntime = AgentRuntime(buildAgentConfig(), agentJournal, mode = agentRuntime.mode)
+        lastAgentBacktest = null
+        candlesSinceBacktest = 0
         riskEngine.updateConfig(settings.riskConfig())
         asset = forAsset
         builder = CandleBuilder(config.candleSeconds)
@@ -402,6 +407,7 @@ class QuotexCoordinator(
             pendingJournal[candles.lastIndex + config.expiryCandles] = Pair(id, prediction.lean)
         }
 
+        refreshAgentBacktestLocked()
         agentRuntime.mode = if (settings.liveAnalysisEnabled) AgentMode.LIVE_ANALYSIS else AgentMode.SIMULATION
         val riskNow = riskEngine.snapshot()
         val agentSnapshot = agentRuntime.onCandleClosed(
@@ -411,6 +417,26 @@ class QuotexCoordinator(
             ocrConfidence = ocrConfidence
         )
         publishLocked(prediction, resolvedMark, confluence, signalReading?.state, agentSnapshot)
+    }
+
+    /**
+     * Section 20: the edge gate is fed by the walk-forward OUT-OF-SAMPLE record, re-measured every
+     * [BACKTEST_REFRESH_CANDLES] closed candles (and once as soon as enough history exists). The last
+     * [BACKTEST_MAX_CANDLES] candles are replayed with a coarser step to keep this cheap on a phone.
+     */
+    private suspend fun refreshAgentBacktestLocked() {
+        candlesSinceBacktest++
+        val enough = candles.size >= config.minCandlesForSignal + BACKTEST_MIN_EXTRA
+        val due = lastAgentBacktest == null || candlesSinceBacktest >= BACKTEST_REFRESH_CANDLES
+        if (!enough || !due) return
+        candlesSinceBacktest = 0
+        val snapshot = candles.takeLast(BACKTEST_MAX_CANDLES)
+        val agentCfg = buildAgentConfig()
+        val report = withContext(Dispatchers.Default) {
+            AgentBacktester(agentCfg).run(snapshot, step = agentCfg.expiryCandles * 2)
+        }
+        lastAgentBacktest = report
+        agentRuntime.setBacktest(report)
     }
 
     private fun publishLocked(
@@ -574,6 +600,9 @@ class QuotexCoordinator(
         const val ASSET_SWITCH_HITS = 3
         /** Readings the OCR engine itself scored below this are not turned into candles at all. */
         const val OCR_TICK_FLOOR = 0.35
+        const val BACKTEST_REFRESH_CANDLES = 100
+        const val BACKTEST_MIN_EXTRA = 150
+        const val BACKTEST_MAX_CANDLES = 1200
         const val CHART_MIN_CONFIDENCE = 0.7
         /** Forming candle close vs OCR live price, relative (0.02% ~ 2 pips on EUR/USD). */
         const val CHART_PRICE_TOLERANCE = 0.0002

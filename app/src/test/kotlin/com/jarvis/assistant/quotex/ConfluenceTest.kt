@@ -173,6 +173,14 @@ class ConfluenceTest {
     }
 
     @Test
+    fun weakEvidenceMovesToWaitingNotWatchlistAndSetupNeverSkipsStages() {
+        val machine = SignalStateMachine()
+        assertEquals(SignalState.WAITING, machine.update(confluenceReading(SetupQuality.WEAK_SETUP, QuotexDecision.CALL), true).state)
+        assertEquals(SignalState.PRE_CONFIRMATION, machine.update(confluenceReading(SetupQuality.SETUP_DETECTED, QuotexDecision.CALL), true).state)
+        assertEquals(SignalState.SCANNING, machine.update(confluenceReading(SetupQuality.NO_SETUP, QuotexDecision.WAIT), true).state)
+    }
+
+    @Test
     fun stateMachineExpiresAConfirmedSetupThatNeverResolves() {
         val machine = SignalStateMachine(maxCandlesConfirmed = 2)
         machine.update(confluenceReading(SetupQuality.SETUP_DETECTED, QuotexDecision.CALL), true) // PRE_CONFIRMATION

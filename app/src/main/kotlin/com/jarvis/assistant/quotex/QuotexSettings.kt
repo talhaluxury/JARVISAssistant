@@ -58,8 +58,20 @@ class QuotexSettings(context: Context) {
         get() = prefs.getInt("max_consecutive_losses", 3)
         set(value) { prefs.edit().putInt("max_consecutive_losses", value).apply() }
 
+    var maxTradesPerDay: Int
+        get() = prefs.getInt("max_trades_day", 30)
+        set(value) { prefs.edit().putInt("max_trades_day", value).apply() }
+
+    var maxTradesPerHour: Int
+        get() = prefs.getInt("max_trades_hour", 10)
+        set(value) { prefs.edit().putInt("max_trades_hour", value).apply() }
+
+    var maxDailyExposure: Float
+        get() = prefs.getFloat("max_daily_exposure", 50f)
+        set(value) { prefs.edit().putFloat("max_daily_exposure", value).apply() }
+
     fun riskConfig(): com.jarvis.assistant.quotex.risk.RiskConfig = try {
-        com.jarvis.assistant.quotex.risk.RiskConfig(stakePerTrade.toDouble(), dailyLossLimit.toDouble(), maxConsecutiveLosses)
+        com.jarvis.assistant.quotex.risk.RiskConfig(stakePerTrade.toDouble(), dailyLossLimit.toDouble(), maxConsecutiveLosses, maxTradesPerDay, maxTradesPerHour, maxDailyExposure.toDouble())
     } catch (e: IllegalArgumentException) {
         com.jarvis.assistant.quotex.risk.RiskConfig()
     }
