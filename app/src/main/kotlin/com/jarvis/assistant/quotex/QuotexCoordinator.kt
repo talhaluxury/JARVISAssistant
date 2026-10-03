@@ -493,7 +493,7 @@ class QuotexCoordinator(
             it.copy(
                 ready = true, asset = asset, lastPrice = lastPrice, candleCount = candles.size,
                 prediction = shown, liveAnalysisEnabled = liveOn, lastOutcome = mark ?: it.lastOutcome,
-                expirySeconds = config.expirySeconds, breakEven = config.breakEvenAccuracy, message = message,
+                expirySeconds = config.expirySeconds, candleSeconds = config.candleSeconds, breakEven = config.breakEvenAccuracy, message = message,
                 confluence = if (liveOn && !risk.paused) (confluence ?: it.confluence) else null,
                 signalState = if (liveOn && signalState != null) signalState else it.signalState,
                 risk = risk, agent = agent ?: it.agent,

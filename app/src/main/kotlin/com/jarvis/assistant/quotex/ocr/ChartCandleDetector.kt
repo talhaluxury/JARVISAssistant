@@ -86,18 +86,29 @@ class ChartCandleDetector(
     fun detect(
         pixels: IntArray, width: Int, height: Int, plotRight: Int,
         calibration: PriceAxisCalibration?, rightmostOpenTimeMs: Long, candleMs: Long,
-        rightEdgeOnly: Boolean = true
+        rightEdgeOnly: Boolean = true,
+        plotBottom: Int = height
     ): ChartDetection {
         fun none(why: String) = ChartDetection(emptyList(), 0.0, why)
         if (calibration == null) return none("Price scale could not be calibrated.")
         if (width <= 0 || height <= 0 || pixels.size < width * height) return none("Bad image size.")
         val right = plotRight.coerceIn(1, width)
 
+        // Only the plot area counts: nothing below the time axis (Buy / Sell buttons, trade panel), and no row that is
+        // mostly inked across the width (promo banner, buttons): candles never fill half of a row's width.
+        val bottom = plotBottom.coerceIn(1, height)
+        val barRow = BooleanArray(height)
+        for (y in 0 until bottom) {
+            var inked = 0
+            for (x in 0 until right) if (ink(pixels[y * width + x]) != Ink.NONE) inked++
+            barRow[y] = inked > right * BAR_ROW_FRACTION
+        }
         val cols = Array(right) { Column() }
         for (x in 0 until right) {
             var up = 0; var down = 0
             val c = cols[x]
-            for (y in 0 until height) {
+            for (y in 0 until bottom) {
+                if (barRow[y]) continue
                 val k = ink(pixels[y * width + x])
                 if (k == Ink.NONE) continue
                 if (k == Ink.UP) up++ else down++
@@ -186,7 +197,8 @@ class ChartCandleDetector(
             // Body = rows where most of the slot is inked; wicks are only 1-2 columns wide so they do not count.
             val need = maxOf(1, ceil(w * 0.6).toInt())
             var bodyTop = -1; var bodyBottom = -1
-            for (y in 0 until height) {
+            for (y in 0 until bottom) {
+                if (barRow[y]) continue
                 var n = 0
                 for (cx in slot.x0..slot.x1) if (ink(pixels[y * width + cx]) == slot.ink) n++
                 if (n >= need) { if (bodyTop < 0) bodyTop = y; bodyBottom = y + 1 }
@@ -214,6 +226,8 @@ class ChartCandleDetector(
     }
 
     companion object {
+        /** A row inked over more than this share of the plot width is a banner / button, not candles. */
+        private const val BAR_ROW_FRACTION = 0.45
         private const val MIN_BRIGHT_UP = 110
         private const val MIN_BRIGHT_DOWN = 140
 

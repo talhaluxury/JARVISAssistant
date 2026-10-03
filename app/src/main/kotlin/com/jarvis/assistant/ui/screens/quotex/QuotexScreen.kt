@@ -80,7 +80,9 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
     var requireEdge by remember { mutableStateOf(vm.requireVerifiedEdge()) }
     var chartCandles by remember { mutableStateOf(vm.useChartCandles()) }
     var autoPan by remember { mutableStateOf(vm.autoChartPan()) }
-    var candleSeconds by remember { mutableStateOf(vm.candleSeconds()) }
+    var pickedSeconds by remember { mutableStateOf(vm.candleSeconds()) }
+    // JARVIS follows the chart's real candle length by itself: show what it is actually using.
+    val candleSeconds = if (state.candleSeconds > 0) state.candleSeconds else pickedSeconds
     var expiry by remember { mutableStateOf(vm.expiryCandles().toFloat()) }
     var payout by remember { mutableStateOf(vm.payout()) }
     var stake by remember { mutableStateOf(vm.stakePerTrade()) }
@@ -302,10 +304,13 @@ fun QuotexScreen(onBack: () -> Unit, vm: QuotexViewModel = viewModel()) {
                 Text("Restart monitoring after changing this.", color = Muted, fontSize = 10.sp)
             }
             SetupStep("5. Timeframe (${com.jarvis.assistant.quotex.domain.TimeframePlan.forEntry(candleSeconds).describe()})", null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (tf in com.jarvis.assistant.quotex.domain.Timeframe.values()) {
-                        OutlinedButton(onClick = { candleSeconds = tf.seconds; vm.setCandleSeconds(tf.seconds) }) {
-                            Text(tf.label, color = if (candleSeconds == tf.seconds) Cyan else Muted, fontSize = 11.sp)
+                Text("This is the CHART candle length (not the trade Timer). JARVIS reads it from the Quotex chart automatically: change the timeframe in Quotex and JARVIS follows. Tap here only as a fallback.", color = Muted, fontSize = 10.sp)
+                for (rowOptions in TIMEFRAME_CHOICES.chunked(5)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (sec in rowOptions) {
+                            OutlinedButton(onClick = { pickedSeconds = sec; vm.setCandleSeconds(sec) }) {
+                                Text(com.jarvis.assistant.quotex.agent.CandleClock.label(sec), color = if (candleSeconds == sec) Cyan else Muted, fontSize = 11.sp)
+                            }
                         }
                     }
                 }
@@ -508,3 +513,6 @@ private fun ReportText(report: QuotexBacktestReport?) {
     if (report == null) return
     Text(report.toText(), color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
 }
+
+/** Every chart candle length JARVIS can follow: 5s ... 1h. */
+private val TIMEFRAME_CHOICES = listOf(5, 10, 15, 30, 60, 120, 300, 900, 1800, 3600)

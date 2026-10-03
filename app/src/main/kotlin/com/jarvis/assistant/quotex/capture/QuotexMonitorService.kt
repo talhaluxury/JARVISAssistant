@@ -212,7 +212,7 @@ class QuotexMonitorService : Service() {
             val pixels = IntArray(w * h)
             crop.getPixels(pixels, 0, w, 0, 0, w, h)
             val rightmost = System.currentTimeMillis() / candleMs * candleMs
-            com.jarvis.assistant.quotex.ocr.ChartCandleDetector().detect(pixels, w, h, (axisLeft - 4).coerceAtLeast(1), calibration, rightmost, candleMs, rightEdgeOnly)
+            com.jarvis.assistant.quotex.ocr.ChartCandleDetector().detect(pixels, w, h, (axisLeft - 4).coerceAtLeast(1), calibration, rightmost, candleMs, rightEdgeOnly, reading.timeAxisTopY ?: h)
         } catch (e: Exception) {
             fail("bitmap unreadable (${e.javaClass.simpleName})")
         }

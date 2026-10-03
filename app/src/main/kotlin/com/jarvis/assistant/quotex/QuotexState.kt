@@ -31,6 +31,8 @@ data class QuotexUiState(
     val lastOutcome: QuotexOutcomeMark? = null,
     val backtest: QuotexBacktestReport? = null,
     val expirySeconds: Int = 60,
+    /** Candle length JARVIS is really using (it follows the chart automatically). 0 = not known yet. */
+    val candleSeconds: Int = 0,
     val breakEven: Double = 0.54,
     val message: String? = null,
     /** Strategy-library confluence read and its signal-state-machine status (sections 11-14). */

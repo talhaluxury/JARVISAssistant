@@ -23,7 +23,9 @@ data class QuotexReading(
     /** Pixels per minute along the time axis (from the HH:MM labels under the chart), when readable. */
     val pxPerMinute: Double? = null,
     /** Seconds left on the broker's candle countdown chip ("00:07"), when readable. */
-    val countdownSec: Int? = null
+    val countdownSec: Int? = null,
+    /** Top edge (px, in the cropped image) of the HH:MM time-axis row: the chart plot ends above it. */
+    val timeAxisTopY: Int? = null
 )
 
 /**
@@ -228,7 +230,7 @@ class QuotexScreenParser {
             (line.left + line.right) / 2f >= width * 0.65f &&
                 line.text.trim().filter { it.isDigit() || it == '.' || it == ',' }.replace(',', '.').toDoubleOrNull() in keptValues
         }.minOfOrNull { it.left }
-        return QuotexReading(price, asset, note, labels.size, if (price == null) null else readingConfidence(labels, price), grid, axisLeft, timeAxisPxPerMinute(lines, height), countdownSeconds(lines))
+        return QuotexReading(price, asset, note, labels.size, if (price == null) null else readingConfidence(labels, price), grid, axisLeft, timeAxisPxPerMinute(lines, height), countdownSeconds(lines), timeAxisTop(lines))
     }
 
     private val timeLabelRegex = Regex("^\\d{1,2}:\\d{2}$")
@@ -245,6 +247,12 @@ class QuotexScreenParser {
             m.groupValues[1].toIntOrNull()?.takeIf { it in 1..59 }
         }.distinct()
         return found.singleOrNull()
+    }
+
+    private fun timeAxisTop(lines: List<OcrLine>): Int? {
+        val y = timeAxisRowY(lines) ?: return null
+        val row = lines.filter { timeLabelRegex.matches(it.text.trim()) && kotlin.math.abs(it.centerY - y) <= maxOf(it.height, 16) }
+        return row.minOfOrNull { it.top }
     }
 
     /** Vertical position of the row that holds most HH:MM labels (the real time axis). */
