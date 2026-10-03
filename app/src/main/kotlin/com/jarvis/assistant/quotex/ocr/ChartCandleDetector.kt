@@ -45,7 +45,7 @@ class PriceAxisCalibration private constructor(
  * Result of reading candles from a chart image. [candles] are oldest -> newest; the LAST one is the candle that is
  * still forming and must not be analysed as closed. [confidence] is 0..1 and 0 means "do not use".
  */
-data class ChartDetection(val candles: List<Candle>, val confidence: Double, val note: String) {
+data class ChartDetection(val candles: List<Candle>, val confidence: Double, val note: String, val pitchPx: Double = 0.0) {
     /** Only candles that have finished forming. */
     val closed: List<Candle> get() = if (candles.size > 1) candles.dropLast(1) else emptyList()
 }
@@ -145,6 +145,7 @@ class ChartCandleDetector(
         if (real.size < minCandles) return none("Only ${real.size} candles found (need $minCandles).")
         val sortedGaps = real.zipWithNext { a, b -> b.centre - a.centre }.sorted()
         val medGap = sortedGaps[sortedGaps.size / 4]
+        val pitch = sortedGaps[sortedGaps.size / 2]
 
         // Only the newest candles matter. Walk in from the right and stop at the first barrier or hole;
         // everything to its left is ignored, never guessed.
@@ -209,7 +210,7 @@ class ChartCandleDetector(
         // Higher price must be higher on screen (smaller y); a flipped fit means the axis was misread.
         if (calibration.priceAt(0.0) < calibration.priceAt((height - 1).toDouble())) return none("Price scale runs the wrong way.")
         val confidence = (uniformity * calibration.rSquared).coerceIn(0.0, 1.0)
-        return ChartDetection(candles, confidence, "OK, ${candles.size} candles read from the chart.")
+        return ChartDetection(candles, confidence, "OK, ${candles.size} candles read from the chart.", pitch)
     }
 
     companion object {

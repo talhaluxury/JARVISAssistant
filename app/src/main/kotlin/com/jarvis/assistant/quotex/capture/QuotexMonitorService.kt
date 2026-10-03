@@ -102,10 +102,12 @@ class QuotexMonitorService : Service() {
     private suspend fun monitorLoop() {
         val coordinator = module.coordinator
         val settings = module.settings
-        val config = settings.config()
+        var config = settings.config()
         val textReader = reader ?: return
         val parser = QuotexScreenParser()
         var misses = 0
+        var tfCandidate = 0
+        var tfHits = 0
 
         coordinator.ensureReady()
         coordinator.setScreenStatus(ScreenStatus.SEARCHING)
@@ -153,7 +155,17 @@ class QuotexMonitorService : Service() {
                         }
                     }
                     if (reading.price != null && settings.useChartCandles) {
-                        coordinator.onChartDetection(detectChart(crop, reading, config.candleMs), reading.price)
+                        val detection = detectChart(crop, reading, config.candleMs)
+                        coordinator.onChartDetection(detection, reading.price)
+                        val seen = timeframeFrom(reading, detection)
+                        if (seen != null && seen == tfCandidate) tfHits++ else { tfCandidate = seen ?: 0; tfHits = if (seen != null) 1 else 0 }
+                        if (seen != null && tfHits >= TF_HITS_NEEDED && seen != settings.candleSeconds) {
+                            settings.candleSeconds = seen
+                            coordinator.onSettingsChanged()
+                            config = settings.config()
+                            coordinator.setMessage("Chart timeframe read from the screen: ${seen}s. JARVIS candle length set automatically.")
+                            tfHits = 0
+                        }
                     }
                     coordinator.onReading(reading)
                 } finally {
@@ -187,6 +199,18 @@ class QuotexMonitorService : Service() {
         }
     }
 
+    /**
+     * Candle length of the chart itself: candle spacing in pixels divided by pixels per minute of the time axis,
+     * snapped to a standard timeframe. Null unless both were read cleanly and the match is within 25%.
+     */
+    private fun timeframeFrom(reading: com.jarvis.assistant.quotex.ocr.QuotexReading, det: com.jarvis.assistant.quotex.ocr.ChartDetection): Int? {
+        val pxPerMin = reading.pxPerMinute ?: return null
+        if (det.candles.size < 5 || det.pitchPx <= 0.0 || det.confidence < HISTORY_MIN_CONFIDENCE) return null
+        val seconds = det.pitchPx / pxPerMin * 60.0
+        val best = STANDARD_TIMEFRAMES.minByOrNull { kotlin.math.abs(kotlin.math.ln(seconds / it)) } ?: return null
+        return if (kotlin.math.abs(seconds - best) <= best * 0.25) best else null
+    }
+
     private class HistoryFrame(val reading: com.jarvis.assistant.quotex.ocr.QuotexReading, val detection: com.jarvis.assistant.quotex.ocr.ChartDetection)
 
     /** One capture of the screen, read with OCR and the chart detector. Null when there is no frame yet. */
@@ -214,10 +238,10 @@ class QuotexMonitorService : Service() {
     private suspend fun runBackfill(textReader: MlKitTextReader, parser: QuotexScreenParser) {
         val coordinator = module.coordinator
         val settings = module.settings
-        val config = settings.config()
+        var config = settings.config()
         val auto = settings.autoChartPan && com.jarvis.assistant.accessibility.JarvisAccessibilityService.isEnabled
         val target = config.minCandlesForSignal + 50
-        val stitcher = com.jarvis.assistant.quotex.ocr.HistoryStitcher(config.candleMs)
+        var stitcher = com.jarvis.assistant.quotex.ocr.HistoryStitcher(config.candleMs)
         val metrics = resources.displayMetrics
         val screenW = metrics.widthPixels.toFloat()
         val screenH = metrics.heightPixels.toFloat()
@@ -236,6 +260,16 @@ class QuotexMonitorService : Service() {
                 val price = fr.reading.price
                 val det = fr.detection
                 lastWhy = det.note
+                val seenTf = timeframeFrom(fr.reading, det)
+                if (seenTf != null && seenTf != config.candleSeconds) {
+                    // The chart's own timeframe differs from JARVIS's: follow the chart, then read the frame again.
+                    settings.candleSeconds = seenTf
+                    coordinator.onSettingsChanged()
+                    config = settings.config()
+                    stitcher = com.jarvis.assistant.quotex.ocr.HistoryStitcher(config.candleMs)
+                    coordinator.setMessage("History: chart timeframe is ${seenTf}s - JARVIS candle length set automatically.")
+                    continue
+                }
                 if (price != null && det.candles.isNotEmpty() && det.confidence >= HISTORY_MIN_CONFIDENCE &&
                     com.jarvis.assistant.quotex.ocr.ChartCandleDetector.agreesWith(det, price, price * HISTORY_PRICE_TOLERANCE)
                 ) {
@@ -257,35 +291,43 @@ class QuotexMonitorService : Service() {
                 if (now - startedAt > MAX_BACKFILL_MS) break
                 if (auto) {
                     if (pans >= MAX_PANS) break
-                    val ok = com.jarvis.assistant.accessibility.JarvisAccessibilityService.panChart(axisLeft * 0.20f, axisLeft * 0.70f, screenH * 0.33f)
-                    if (!ok) { coordinator.setMessage("History: the chart scroll was refused by Android. Turn it off and drag the chart yourself."); break }
+                    val ok = com.jarvis.assistant.accessibility.JarvisAccessibilityService.panChart(axisLeft * 0.15f, axisLeft * 0.55f, screenH * 0.33f)
+                    if (!ok) { coordinator.setMessage("History: the chart scroll was refused by Android (is the Accessibility service on and the chart on screen?). Turn auto-scroll off and drag the chart yourself."); break }
                     pans++
                     delay(PAN_SETTLE_MS)
                 } else {
                     coordinator.setMessage("History: ${stitcher.size}/$target candles. Drag the chart slowly to the RIGHT (older candles); stop when you reach the end.")
                     delay(MANUAL_POLL_MS)
                 }
-                val fr = readHistoryFrame(textReader, parser, config.candleMs, rightEdgeOnly = false)
-                if (fr == null || fr.detection.candles.isEmpty()) {
-                    stalls++
-                } else {
-                    fr.reading.axisLeftX?.let { axisLeft = it.toFloat() }
-                    if (stitcher.add(fr.detection.candles) == com.jarvis.assistant.quotex.ocr.HistoryStitcher.Result.EXTENDED) {
-                        stalls = 0
-                        lastGrowthAt = System.currentTimeMillis()
-                        coordinator.setMessage("History: ${stitcher.size}/$target candles read...")
-                    } else {
-                        stalls++
+                var fr = readHistoryFrame(textReader, parser, config.candleMs, rightEdgeOnly = false)
+                var res = if (fr == null || fr.detection.candles.isEmpty()) null else stitcher.add(fr.detection.candles)
+                if (auto && res == com.jarvis.assistant.quotex.ocr.HistoryStitcher.Result.NO_OVERLAP) {
+                    // The chart coasted too far (inertia) and skipped past the overlap: come back a little and look again.
+                    for (retry in 0 until 2) {
+                        com.jarvis.assistant.accessibility.JarvisAccessibilityService.panChart(axisLeft * 0.50f, axisLeft * 0.30f, screenH * 0.33f)
+                        delay(PAN_SETTLE_MS)
+                        fr = readHistoryFrame(textReader, parser, config.candleMs, rightEdgeOnly = false)
+                        res = if (fr == null || fr.detection.candles.isEmpty()) null else stitcher.add(fr.detection.candles)
+                        if (res == com.jarvis.assistant.quotex.ocr.HistoryStitcher.Result.EXTENDED || res == com.jarvis.assistant.quotex.ocr.HistoryStitcher.Result.NO_NEW_CANDLES) break
                     }
+                }
+                fr?.reading?.axisLeftX?.let { axisLeft = it.toFloat() }
+                if (res == com.jarvis.assistant.quotex.ocr.HistoryStitcher.Result.EXTENDED) {
+                    stalls = 0
+                    lastGrowthAt = System.currentTimeMillis()
+                    coordinator.setMessage("History: ${stitcher.size}/$target candles read...")
+                } else {
+                    stalls++
                 }
                 if (auto && stalls >= 3) break
                 if (!auto && System.currentTimeMillis() - lastGrowthAt > MANUAL_IDLE_MS) break
             }
 
-            // 3) Bring the chart back to the live edge when we moved it.
+            // 3) Bring the chart back to the live edge: drag towards the newest candles more than enough times.
+            //    The chart stops at the live edge by itself, so overshooting is harmless.
             if (auto) {
-                repeat(pans) {
-                    com.jarvis.assistant.accessibility.JarvisAccessibilityService.panChart(axisLeft * 0.70f, axisLeft * 0.20f, screenH * 0.33f)
+                repeat(minOf(pans + 3, 20)) {
+                    com.jarvis.assistant.accessibility.JarvisAccessibilityService.panChart(axisLeft * 0.75f, axisLeft * 0.10f, screenH * 0.33f)
                     delay(PAN_SETTLE_MS)
                 }
             }
@@ -297,7 +339,7 @@ class QuotexMonitorService : Service() {
                 when {
                     added < 0 -> "History: ${closed.size} candles read, but the asset name is not known yet - set it under 'Asset (manual)' and run this again."
                     else -> "History loaded: ${closed.size} candles read from the chart, $added new saved. " +
-                        (if (auto) "If the chart is not at the latest candle, tap its 'latest' arrow." else "Scroll the chart back to the latest candle.")
+                        (if (auto) "The chart was dragged back to the live edge." else "Scroll the chart back to the latest candle.")
                 }
             )
         } finally {
@@ -352,6 +394,8 @@ class QuotexMonitorService : Service() {
         private const val ACTION_START = "com.jarvis.assistant.quotex.START"
         private const val ACTION_STOP = "com.jarvis.assistant.quotex.STOP"
         private const val ACTION_BACKFILL = "com.jarvis.assistant.quotex.BACKFILL"
+        private const val TF_HITS_NEEDED = 3
+        private val STANDARD_TIMEFRAMES = listOf(5, 10, 15, 30, 60, 120, 180, 300, 600, 900, 1800, 3600)
         private const val SEED_WAIT_MS = 40_000L
         private const val MAX_BACKFILL_MS = 150_000L
         private const val MAX_PANS = 40

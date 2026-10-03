@@ -342,15 +342,18 @@ class JarvisAccessibilityService : AccessibilityService() {
      * it is purely horizontal and confined to the band of the screen above the trade panel.
      */
     fun chartPan(x1: Float, x2: Float, y: Float): Boolean {
+        // Never drags over JARVIS's own screens or the system UI (the broker app / browser package name varies).
+        val pkg = try { rootInActiveWindow?.packageName?.toString() } catch (e: Exception) { null }
+        if (pkg == null || pkg == packageName || pkg.startsWith("com.android.systemui")) return false
         val m = resources.displayMetrics
         val w = m.widthPixels.toFloat()
         val h = m.heightPixels.toFloat()
         if (y < h * 0.15f || y > h * 0.50f) return false
         if (x1 < w * 0.03f || x1 > w * 0.85f || x2 < w * 0.03f || x2 > w * 0.85f) return false
-        if (kotlin.math.abs(x2 - x1) < w * 0.15f) return false
+        if (kotlin.math.abs(x2 - x1) < w * 0.06f) return false
         val path = android.graphics.Path().apply { moveTo(x1, y); lineTo(x2, y) }
         val gesture = android.accessibilityservice.GestureDescription.Builder()
-            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 450))
+            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 900))
             .build()
         return dispatchGesture(gesture, null, null)
     }

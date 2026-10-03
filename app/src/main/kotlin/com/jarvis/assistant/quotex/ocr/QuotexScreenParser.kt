@@ -19,7 +19,9 @@ data class QuotexReading(
     /** Axis labels that sit on the evenly spaced grid (the live-price chip excluded): used to calibrate pixel -> price. */
     val gridLabels: List<AxisLabel> = emptyList(),
     /** Left edge (px, in the cropped image) of the price axis text: candles are only searched to the left of it. */
-    val axisLeftX: Int? = null
+    val axisLeftX: Int? = null,
+    /** Pixels per minute along the time axis (from the HH:MM labels under the chart), when readable. */
+    val pxPerMinute: Double? = null
 )
 
 /**
@@ -179,7 +181,30 @@ class QuotexScreenParser {
             (line.left + line.right) / 2f >= width * 0.65f &&
                 line.text.trim().filter { it.isDigit() || it == '.' || it == ',' }.replace(',', '.').toDoubleOrNull() in keptValues
         }.minOfOrNull { it.left }
-        return QuotexReading(price, asset, note, labels.size, if (price == null) null else readingConfidence(labels, price), grid, axisLeft)
+        return QuotexReading(price, asset, note, labels.size, if (price == null) null else readingConfidence(labels, price), grid, axisLeft, timeAxisPxPerMinute(lines, height))
+    }
+
+    private val timeLabelRegex = Regex("^\\d{1,2}:\\d{2}$")
+
+    /** Median pixel distance per minute between neighbouring HH:MM labels of the time axis; null if fewer than 2 are readable. */
+    private fun timeAxisPxPerMinute(lines: List<OcrLine>, height: Int): Double? {
+        val marks = lines.filter { it.centerY > height * 0.5f && timeLabelRegex.matches(it.text.trim()) }
+            .mapNotNull { line ->
+                val parts = line.text.trim().split(':')
+                val h = parts[0].toIntOrNull() ?: return@mapNotNull null
+                val m = parts[1].toIntOrNull() ?: return@mapNotNull null
+                if (h > 23 || m > 59) return@mapNotNull null
+                ((line.left + line.right) / 2.0) to (h * 60 + m)
+            }
+            .sortedBy { it.first }
+        if (marks.size < 2) return null
+        val slopes = marks.zipWithNext { a, b ->
+            var dm = b.second - a.second
+            if (dm < -720) dm += 1440
+            if (dm <= 0) null else (b.first - a.first) / dm
+        }.filterNotNull().sorted()
+        if (slopes.isEmpty()) return null
+        return slopes[slopes.size / 2].takeIf { it > 0.0 }
     }
 
     /**

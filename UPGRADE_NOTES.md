@@ -34,6 +34,10 @@ The APK output is `app/build/outputs/apk/debug/app-debug.apk`.
   (you drag it, or JARVIS does with "Let JARVIS scroll the chart" ON), stitches overlapping frames by exact open/close
   match, and saves older candles. Frames without an exact overlap are rejected.
 - The only gesture JARVIS can make on Quotex is JarvisAccessibilityService.panChart: one horizontal drag inside the
-  chart band. Buy/Sell taps and typing stay blocked. Setting is OFF by default.
+  chart band. Buy/Sell taps and typing stay blocked. Setting is ON by default (switch it off on the Quotex Analyzer screen to drag the chart yourself).
 - Chart timeframe in Quotex MUST equal JARVIS candle length (Settings -> candle seconds), otherwise candle times are wrong.
 - Not compiled or run on a phone in the authoring session: build it and test on the device.
+- Timeframe is now read from the screen (candle spacing in px / px-per-minute of the HH:MM time labels, snapped to a
+  standard timeframe, confirmed on 3 reads) and JARVIS's candle length follows it automatically. No taps needed.
+- Auto chart scroll: slow 0.9 s drags, retry with a small drag back if the chart coasted past the overlap, then
+  drags back to the live edge (the chart stops there by itself).
