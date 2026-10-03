@@ -109,12 +109,13 @@ class QuotexMonitorService : Service() {
         var tfCandidate = 0
         var tfHits = 0
         var lastAutoBackfillAt = 0L
+        val countdownTf = com.jarvis.assistant.quotex.ocr.CountdownTimeframe()
 
         coordinator.ensureReady()
         coordinator.setScreenStatus(ScreenStatus.SEARCHING)
 
         while (currentCoroutineContext().isActive) {
-            var pause = config.sampleIntervalMs
+            var pause = if (config.candleSeconds <= 15) FAST_SAMPLE_MS else config.sampleIntervalMs
             if (backfillRequested) {
                 backfillRequested = false
                 try {
@@ -172,13 +173,16 @@ class QuotexMonitorService : Service() {
                                 coordinator.setMessage("History is short (${ui.candleCount}/${config.minCandlesForSignal}). Turn ON the JARVIS Accessibility service so it can scroll the chart by itself.")
                             }
                         }
-                        val seen = timeframeFrom(reading, detection)
+                        // The broker's own countdown chip is exact; chart spacing is only a fallback when it is unreadable.
+                        val exact = countdownTf.add(reading.countdownSec)
+                        val seen = exact ?: if (reading.countdownSec == null) timeframeFrom(reading, detection) else null
                         if (seen != null && seen == tfCandidate) tfHits++ else { tfCandidate = seen ?: 0; tfHits = if (seen != null) 1 else 0 }
-                        if (seen != null && tfHits >= TF_HITS_NEEDED && seen != settings.candleSeconds) {
+                        val needed = if (exact != null) 2 else TF_HITS_NEEDED * 4
+                        if (seen != null && tfHits >= needed && seen != settings.candleSeconds) {
                             settings.candleSeconds = seen
-                            coordinator.onSettingsChanged()
+                            coordinator.onTimeframeChanged()
                             config = settings.config()
-                            coordinator.setMessage("Chart timeframe read from the screen: ${seen}s. JARVIS candle length set automatically.")
+                            coordinator.setMessage("Chart timeframe read from the screen: ${seen}s. History restarted on the new candle length.")
                             tfHits = 0
                         }
                     }
@@ -275,7 +279,7 @@ class QuotexMonitorService : Service() {
                 val price = fr.reading.price
                 val det = fr.detection
                 lastWhy = det.note
-                val seenTf = timeframeFrom(fr.reading, det)
+                val seenTf = if (fr.reading.countdownSec == null) timeframeFrom(fr.reading, det) else null
                 if (seenTf != null && seenTf != config.candleSeconds) {
                     // The chart's own timeframe differs from JARVIS's: follow the chart, then read the frame again.
                     settings.candleSeconds = seenTf
@@ -410,6 +414,7 @@ class QuotexMonitorService : Service() {
         private const val ACTION_STOP = "com.jarvis.assistant.quotex.STOP"
         private const val ACTION_BACKFILL = "com.jarvis.assistant.quotex.BACKFILL"
         private const val TF_HITS_NEEDED = 3
+        private const val FAST_SAMPLE_MS = 700L
         private val STANDARD_TIMEFRAMES = listOf(5, 10, 15, 30, 60, 120, 180, 300, 600, 900, 1800, 3600)
         private const val AUTO_BACKFILL_COOLDOWN_MS = 3 * 60_000L
         private const val SEED_WAIT_MS = 40_000L

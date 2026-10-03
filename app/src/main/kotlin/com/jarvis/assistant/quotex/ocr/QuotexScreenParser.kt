@@ -21,7 +21,9 @@ data class QuotexReading(
     /** Left edge (px, in the cropped image) of the price axis text: candles are only searched to the left of it. */
     val axisLeftX: Int? = null,
     /** Pixels per minute along the time axis (from the HH:MM labels under the chart), when readable. */
-    val pxPerMinute: Double? = null
+    val pxPerMinute: Double? = null,
+    /** Seconds left on the broker's candle countdown chip ("00:07"), when readable. */
+    val countdownSec: Int? = null
 )
 
 /**
@@ -226,14 +228,38 @@ class QuotexScreenParser {
             (line.left + line.right) / 2f >= width * 0.65f &&
                 line.text.trim().filter { it.isDigit() || it == '.' || it == ',' }.replace(',', '.').toDoubleOrNull() in keptValues
         }.minOfOrNull { it.left }
-        return QuotexReading(price, asset, note, labels.size, if (price == null) null else readingConfidence(labels, price), grid, axisLeft, timeAxisPxPerMinute(lines, height))
+        return QuotexReading(price, asset, note, labels.size, if (price == null) null else readingConfidence(labels, price), grid, axisLeft, timeAxisPxPerMinute(lines, height), countdownSeconds(lines))
     }
 
     private val timeLabelRegex = Regex("^\\d{1,2}:\\d{2}$")
 
     /** Median pixel distance per minute between neighbouring HH:MM labels of the time axis; null if fewer than 2 are readable. */
+    private val countdownRegex = Regex("^0{1,2}:(\\d{2})$")
+
+    /** The "00:07" chip: minutes 00 and not on the time-axis row. Null when absent or ambiguous. */
+    private fun countdownSeconds(lines: List<OcrLine>): Int? {
+        val axisY = timeAxisRowY(lines)
+        val found = lines.mapNotNull { l ->
+            val m = countdownRegex.matchEntire(l.text.trim()) ?: return@mapNotNull null
+            if (axisY != null && kotlin.math.abs(l.centerY - axisY) <= maxOf(l.height, 16) * 1.2f) return@mapNotNull null
+            m.groupValues[1].toIntOrNull()?.takeIf { it in 1..59 }
+        }.distinct()
+        return found.singleOrNull()
+    }
+
+    /** Vertical position of the row that holds most HH:MM labels (the real time axis). */
+    private fun timeAxisRowY(lines: List<OcrLine>): Float? {
+        val cands = lines.filter { timeLabelRegex.matches(it.text.trim()) }
+        if (cands.size < 2) return null
+        return cands.maxByOrNull { c -> cands.count { kotlin.math.abs(it.centerY - c.centerY) <= maxOf(c.height, 16) } }?.centerY
+    }
+
+    /** Median pixel distance per minute between neighbouring HH:MM labels of the time axis; null if fewer than 2 are readable. */
     private fun timeAxisPxPerMinute(lines: List<OcrLine>, height: Int): Double? {
-        val marks = lines.filter { it.centerY > height * 0.5f && timeLabelRegex.matches(it.text.trim()) }
+        val rowY = timeAxisRowY(lines)
+        val marks = lines.filter { l ->
+            timeLabelRegex.matches(l.text.trim()) && (if (rowY != null) kotlin.math.abs(l.centerY - rowY) <= maxOf(l.height, 16) else l.centerY > height * 0.5f)
+        }
             .mapNotNull { line ->
                 val parts = line.text.trim().split(':')
                 val h = parts[0].toIntOrNull() ?: return@mapNotNull null

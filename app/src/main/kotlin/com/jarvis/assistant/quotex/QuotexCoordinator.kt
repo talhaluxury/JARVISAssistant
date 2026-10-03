@@ -134,6 +134,17 @@ class QuotexCoordinator(
         mutex.withLock { if (!ready) initialiseLocked(settings.lastAsset) }
     }
 
+    /**
+     * The chart's candle length really changed: stored candles sit on the OLD time grid, so mixing them with the new
+     * ones would create fake gaps. They are deleted for the current asset, then everything restarts on the new length.
+     */
+    suspend fun onTimeframeChanged() {
+        mutex.withLock {
+            (asset ?: settings.lastAsset)?.let { repository.clearAsset(it) }
+            initialiseLocked(asset ?: settings.lastAsset)
+        }
+    }
+
     /** Called after candle length / expiry / payout / thresholds changed. */
     suspend fun onSettingsChanged() {
         mutex.withLock { initialiseLocked(asset ?: settings.lastAsset) }

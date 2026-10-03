@@ -71,6 +71,9 @@ interface QuotexCandleDao {
 
     @Query("DELETE FROM quotex_candles")
     suspend fun clearAll()
+
+    @Query("DELETE FROM quotex_candles WHERE asset = :asset")
+    suspend fun clearAsset(asset: String)
 }
 
 @Dao
@@ -126,6 +129,8 @@ private fun Candle.toEntity(asset: String) = QuotexCandleEntity(asset = asset, o
 private fun QuotexCandleEntity.toDomain() = Candle(openTimeMs, open, high, low, close)
 
 class QuotexCandleRepository(private val dao: QuotexCandleDao) {
+    suspend fun clearAsset(asset: String) = dao.clearAsset(asset)
+
     suspend fun insert(asset: String, candle: Candle): Boolean = dao.insert(candle.toEntity(asset)) != -1L
 
     /** The most recent [limit] candles of [asset], oldest first. */
