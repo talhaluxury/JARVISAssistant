@@ -269,13 +269,14 @@ class CandleBuilder(private val candleSeconds: Int) {
     private var high = 0.0
     private var low = 0.0
     private var close = 0.0
+    private var ticks = 0
 
     /** Adds a reading. Returns the candle that just CLOSED (because this reading starts a new one), or null. */
     fun add(timeMs: Long, price: Double): Candle? {
         val thisBucket = timeMs / candleMs * candleMs
         var closed: Candle? = null
         if (bucket >= 0 && thisBucket != bucket) {
-            closed = Candle(bucket, open, high, low, close)
+            closed = Candle(bucket, open, high, low, close, ticks)
         }
         if (bucket < 0 || thisBucket != bucket) {
             bucket = thisBucket
@@ -283,7 +284,9 @@ class CandleBuilder(private val candleSeconds: Int) {
             high = price
             low = price
             close = price
+            ticks = 1
         } else {
+            ticks++
             if (price > high) high = price
             if (price < low) low = price
             close = price

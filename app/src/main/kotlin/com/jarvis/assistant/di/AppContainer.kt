@@ -180,5 +180,12 @@ class AppContainer(context: Context) {
     val winGo: WinGoModule by lazy { WinGoModule(context) }
 
     /** Quotex chart analyzer: analysis only (no order path), separate DB. */
-    val quotex: QuotexModule by lazy { QuotexModule(context) }
+    val quotex: QuotexModule by lazy { QuotexModule(context, aiService) }
+
+    /** DEMO / PAPER auto-trading engine (no broker path at all). Fed by the Quotex screen reader. */
+    val demoTrading: com.jarvis.assistant.demotrade.DemoTradingModule by lazy {
+        com.jarvis.assistant.demotrade.DemoTradingModule(context, aiService).also { m ->
+            quotex.coordinator.demoFeed = m.runtime
+        }
+    }
 }

@@ -111,7 +111,8 @@ fun JarvisNavGraph() {
                     onOpenSettings = { navController.navigate("settings") },
                     onOpenRemote = { navController.navigate("remote") },
                     onOpenWinGo = { navController.navigate("wingo") },
-                    onOpenQuotex = { navController.navigate("quotex") }
+                    onOpenQuotex = { navController.navigate("quotex") },
+                    onOpenDemoTrade = { navController.navigate("demotrade") }
                 )
             }
             composable("chat") { ChatScreen(assistantViewModel) }
@@ -128,7 +129,9 @@ fun JarvisNavGraph() {
                 )
             }
             composable("wingo") { WinGoScreen(onBack = { navController.popBackStack() }) }
-            composable("quotex") { QuotexScreen(onBack = { navController.popBackStack() }) }
+            composable("quotex") { QuotexScreen(onBack = { navController.popBackStack() }, onOpenPro = { navController.navigate("quotex_pro") }) }
+            composable("quotex_pro") { com.jarvis.assistant.ui.screens.quotex.QuotexProScreen(onBack = { navController.popBackStack() }) }
+            composable("demotrade") { com.jarvis.assistant.ui.screens.demotrade.DemoTradingScreen(onBack = { navController.popBackStack() }) }
             composable("dashboard") { DashboardScreen(onBack = { navController.popBackStack() }) }
             composable("permissions") { PermissionsScreen(onBack = { navController.popBackStack() }) }
         }

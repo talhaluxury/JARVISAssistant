@@ -25,6 +25,12 @@ class JarvisApplication : Application() {
             container.knowledgeRepository.ensureSeeded()
         }
 
+        // DEMO paper-trading engine: wire it to the Quotex feed at startup so open demo trades are
+        // restored and settled even if the UI is never opened after a process restart.
+        CoroutineScope(Dispatchers.IO).launch {
+            try { container.demoTrading } catch (e: Exception) { android.util.Log.w("JarvisApp", "demo engine init failed", e) }
+        }
+
         if (com.jarvis.assistant.remote.RemoteAutoConnect.isEnabled(this)) {
             com.jarvis.assistant.remote.RemoteAutoConnect.start(this)
         }

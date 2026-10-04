@@ -24,7 +24,7 @@ class QuotexSettings(context: Context) {
      * loads history. On by default; with it off, "Load chart history" asks YOU to drag the chart instead.
      */
     var autoChartPan: Boolean
-        get() = prefs.getBoolean("auto_chart_pan", true)
+        get() = prefs.getBoolean("auto_chart_pan", false)
         set(value) { prefs.edit().putBoolean("auto_chart_pan", value).apply() }
 
     /** Starts "load chart history" by itself whenever the chart is readable but too few candles are known. */
@@ -39,6 +39,11 @@ class QuotexSettings(context: Context) {
     var expiryCandles: Int
         get() = prefs.getInt("expiry_candles", 4)
         set(value) { prefs.edit().putInt("expiry_candles", value).apply() }
+
+    /** Virtual stake per paper trade (play money, only used for the paper profit/loss display). */
+    var paperStake: Float
+        get() = prefs.getFloat("paper_stake", 10f)
+        set(value) { prefs.edit().putFloat("paper_stake", value.coerceIn(1f, 100000f)).apply() }
 
     /** Fraction paid on a win, e.g. 0.85 - copy it from the payout % shown next to the asset. */
     var payout: Float
@@ -82,6 +87,61 @@ class QuotexSettings(context: Context) {
     var maxDailyExposure: Float
         get() = prefs.getFloat("max_daily_exposure", 50f)
         set(value) { prefs.edit().putFloat("max_daily_exposure", value).apply() }
+
+    /** Setups scoring below this (0-100 setup strength, not a probability) are shown as WATCH, never as a setup. */
+    var minSetupScore: Int
+        get() = prefs.getInt("min_setup_score", 60)
+        set(value) { prefs.edit().putInt("min_setup_score", value.coerceIn(0, 100)).apply() }
+
+    /** Below this data-quality score (0-100) the analysis is paused with NO SIGNAL. */
+    var minDataQualityScore: Int
+        get() = prefs.getInt("min_data_quality", 60)
+        set(value) { prefs.edit().putInt("min_data_quality", value.coerceIn(0, 100)).apply() }
+
+    /** Verbose analysis logging (never logs keys, tokens or personal data). */
+    var debugLogging: Boolean
+        get() = prefs.getBoolean("debug_logging", false)
+        set(value) { prefs.edit().putBoolean("debug_logging", value).apply() }
+
+    /** Comma-separated strategy names the user switched off (indicators feed these strategies, so this also switches indicators off). */
+    var disabledStrategies: String
+        get() = prefs.getString("disabled_strategies", "") ?: ""
+        set(value) { prefs.edit().putString("disabled_strategies", value).apply() }
+
+    /** 0 = automatic (derived from the entry timeframe). */
+    var mtfMiddleSeconds: Int
+        get() = prefs.getInt("mtf_middle", 0)
+        set(value) { prefs.edit().putInt("mtf_middle", value).apply() }
+
+    var mtfHigherSeconds: Int
+        get() = prefs.getInt("mtf_higher", 0)
+        set(value) { prefs.edit().putInt("mtf_higher", value).apply() }
+
+    /** When on, HIGH (not only EXTREME) volatility means NO TRADE. */
+    var blockHighVolatility: Boolean
+        get() = prefs.getBoolean("block_high_vol", false)
+        set(value) { prefs.edit().putBoolean("block_high_vol", value).apply() }
+
+    /** Only when the user says they maintain a calendar does an empty list mean "no events"; otherwise news is UNAVAILABLE. */
+    var newsCalendarEnabled: Boolean
+        get() = prefs.getBoolean("news_calendar_enabled", false)
+        set(value) { prefs.edit().putBoolean("news_calendar_enabled", value).apply() }
+
+    var newsEvents: String
+        get() = prefs.getString("news_events", "") ?: ""
+        set(value) { prefs.edit().putString("news_events", value).apply() }
+
+    var newsHighWindowMin: Int
+        get() = prefs.getInt("news_high_window_min", 15)
+        set(value) { prefs.edit().putInt("news_high_window_min", value.coerceIn(1, 120)).apply() }
+
+    var labRules: String
+        get() = prefs.getString("lab_rules", "") ?: ""
+        set(value) { prefs.edit().putString("lab_rules", value).apply() }
+
+    var labPaperStats: String
+        get() = prefs.getString("lab_paper_stats", "") ?: ""
+        set(value) { prefs.edit().putString("lab_paper_stats", value).apply() }
 
     fun riskConfig(): com.jarvis.assistant.quotex.risk.RiskConfig = try {
         com.jarvis.assistant.quotex.risk.RiskConfig(stakePerTrade.toDouble(), dailyLossLimit.toDouble(), maxConsecutiveLosses, maxTradesPerDay, maxTradesPerHour, maxDailyExposure.toDouble())

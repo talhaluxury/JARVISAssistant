@@ -241,3 +241,7 @@ Read-only analysis of the WinGo Big/Small history shown on your own screen: OCR 
 7-model ensemble with walk-forward backtesting, floating HUD, chat/voice questions and an offline CSV test mode.
 It never bets or taps, and it reports measured accuracy instead of promising any. A matching analysis-only Quotex chart analyzer with chat is included, now with ATR/MACD/Stochastic/ADX
 indicators and market-structure (trend/volatility) context — see docs/QUOTEX_ANALYZER.md. See [`docs/WINGO_ANALYZER.md`](docs/WINGO_ANALYZER.md).
+
+
+## DEMO / PAPER Trading Core
+See [DEMO_TRADING.md](DEMO_TRADING.md): autonomous *simulated* trading engine, risk manager, backtester, analytics and dashboard (Home -> long-press core -> DEMO).

@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import com.jarvis.assistant.JarvisApplication
 import com.jarvis.assistant.R
 import com.jarvis.assistant.quotex.QuotexModule
+import com.jarvis.assistant.quotex.domain.Candle
 import com.jarvis.assistant.quotex.ocr.QuotexScreenParser
 import com.jarvis.assistant.wingo.ScreenStatus
 import com.jarvis.assistant.wingo.capture.ScreenCaptureManager
@@ -110,6 +111,8 @@ class QuotexMonitorService : Service() {
         var tfHits = 0
         var lastAutoBackfillAt = 0L
         val countdownTf = com.jarvis.assistant.quotex.ocr.CountdownTimeframe()
+        var mismatchFrames = 0
+        var lastLiveDragAt = 0L
 
         coordinator.ensureReady()
         coordinator.setScreenStatus(ScreenStatus.SEARCHING)
@@ -159,6 +162,26 @@ class QuotexMonitorService : Service() {
                     if (reading.price != null && settings.useChartCandles) {
                         val detection = detectChart(crop, reading, config.candleMs)
                         coordinator.onChartDetection(detection, reading.price)
+                        // Chart scrolled back (e.g. after history loading or a stray touch): newest chart candle no longer matches
+                        // the live price for several frames in a row -> drag it back to the live edge by itself.
+                        if (detection.candles.isNotEmpty()) {
+                            val agrees = com.jarvis.assistant.quotex.ocr.ChartCandleDetector.agreesWith(detection, reading.price, reading.price * HISTORY_PRICE_TOLERANCE)
+                            mismatchFrames = if (agrees) 0 else mismatchFrames + 1
+                        }
+                        val nowMs = System.currentTimeMillis()
+                        if (mismatchFrames >= LIVE_DRAG_MISMATCH_FRAMES && settings.autoChartPan && !backfillRequested &&
+                            com.jarvis.assistant.accessibility.JarvisAccessibilityService.isEnabled && nowMs - lastLiveDragAt > LIVE_DRAG_COOLDOWN_MS
+                        ) {
+                            lastLiveDragAt = nowMs
+                            mismatchFrames = 0
+                            val dm = resources.displayMetrics
+                            val ax = (reading.axisLeftX ?: (dm.widthPixels * 0.8f).toInt()).toFloat()
+                            repeat(3) {
+                                com.jarvis.assistant.accessibility.JarvisAccessibilityService.panChart(ax * 0.75f, ax * 0.10f, dm.heightPixels * 0.33f)
+                                delay(PAN_SETTLE_MS)
+                            }
+                            coordinator.setMessage("Chart was not at the live edge - dragged it back to the newest candle.")
+                        }
                         // Fully automatic history: chart readable + too few candles -> load history without any tap.
                         val ui = coordinator.state.value
                         val now = System.currentTimeMillis()
@@ -337,23 +360,39 @@ class QuotexMonitorService : Service() {
                     coordinator.setMessage("History: ${stitcher.size}/$target candles read...")
                 } else {
                     stalls++
+                    // Quotex loads older candles lazily after a scroll: give it a moment before counting a dead end.
+                    if (auto) delay(STALL_RETRY_MS)
                 }
-                if (auto && stalls >= 3) break
+                if (auto && stalls >= MAX_STALLS) break
                 if (!auto && System.currentTimeMillis() - lastGrowthAt > MANUAL_IDLE_MS) break
             }
 
-            // 3) Bring the chart back to the live edge: drag towards the newest candles more than enough times.
-            //    The chart stops at the live edge by itself, so overshooting is harmless.
+            // 3) Bring the chart back to the live edge and VERIFY it (newest chart candle == live price), dragging again
+            //    until it is. The chart stops at the live edge by itself, so overshooting is harmless.
+            var liveCandles: List<Candle> = emptyList()
             if (auto) {
-                repeat(minOf(pans + 3, 20)) {
+                var atLive = false
+                for (attempt in 0 until MAX_LIVE_RETURN_TRIES) {
                     com.jarvis.assistant.accessibility.JarvisAccessibilityService.panChart(axisLeft * 0.75f, axisLeft * 0.10f, screenH * 0.33f)
                     delay(PAN_SETTLE_MS)
+                    val fr = readHistoryFrame(textReader, parser, config.candleMs, rightEdgeOnly = true) ?: continue
+                    val price = fr.reading.price ?: continue
+                    fr.reading.axisLeftX?.let { axisLeft = it.toFloat() }
+                    if (fr.detection.candles.isNotEmpty() &&
+                        com.jarvis.assistant.quotex.ocr.ChartCandleDetector.agreesWith(fr.detection, price, price * HISTORY_PRICE_TOLERANCE)
+                    ) {
+                        // Candles that closed while JARVIS was scrolling (no live sampling then): they are on the live chart now.
+                        liveCandles = fr.detection.closed
+                        atLive = true
+                        break
+                    }
                 }
+                if (!atLive) coordinator.setMessage("History: could not confirm the chart is back at the live edge. Tap the arrow button on the chart once.")
             }
 
             // 4) Save everything that closed (the newest candle was still forming).
             val closed = stitcher.candles.dropLast(1)
-            val added = coordinator.importHistory(closed)
+            val added = coordinator.importHistory(closed + liveCandles)
             coordinator.setMessage(
                 when {
                     added < 0 -> "History: ${closed.size} candles read, but the asset name is not known yet - set it under 'Asset (manual)' and run this again."
@@ -418,8 +457,13 @@ class QuotexMonitorService : Service() {
         private val STANDARD_TIMEFRAMES = listOf(5, 10, 15, 30, 60, 120, 180, 300, 600, 900, 1800, 3600)
         private const val AUTO_BACKFILL_COOLDOWN_MS = 3 * 60_000L
         private const val SEED_WAIT_MS = 40_000L
-        private const val MAX_BACKFILL_MS = 150_000L
-        private const val MAX_PANS = 40
+        private const val MAX_BACKFILL_MS = 240_000L
+        private const val MAX_STALLS = 6
+        private const val MAX_LIVE_RETURN_TRIES = 15
+        private const val LIVE_DRAG_MISMATCH_FRAMES = 8
+        private const val LIVE_DRAG_COOLDOWN_MS = 20_000L
+        private const val STALL_RETRY_MS = 1_500L
+        private const val MAX_PANS = 80
         private const val PAN_SETTLE_MS = 1_000L
         private const val MANUAL_POLL_MS = 1_200L
         private const val MANUAL_IDLE_MS = 30_000L

@@ -44,6 +44,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Auto-start background JARVIS after the phone reboots, if the user turned it on -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Android 12+ Bluetooth state access when the user grants it. -->
@@ -138,6 +139,16 @@
         <service
             android:name=".quotex.overlay.QuotexOverlayService"
             android:exported="false" />
+
+        <!-- Demo (paper) trading engine keep-alive: status notification only, no real orders -->
+        <service
+            android:name=".demotrade.DemoEngineService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the local demo (paper) trading engine running so open paper trades settle on time" />
+        </service>
 
         <activity
             android:name=".quotex.capture.QuotexCaptureConsentActivity"

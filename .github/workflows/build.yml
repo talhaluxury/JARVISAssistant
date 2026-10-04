@@ -20,6 +20,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Run unit tests
+        run: gradle testDebugUnitTest --stacktrace
       - name: Build debug APK (private - includes your API key, for your own installs)
         env:
           REMOTE_RELAY_URL: ${{ vars.REMOTE_RELAY_URL }}

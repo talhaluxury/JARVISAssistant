@@ -454,6 +454,9 @@ fun SettingsScreen(onOpenDashboard: () -> Unit = {}, onOpenPermissions: () -> Un
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
         ) { Text("Open task performance dashboard") }
 
+        SectionLabel("Demo Trading (Paper)")
+        com.jarvis.assistant.ui.screens.demotrade.DemoSettingsSection()
+
         SectionLabel("About")
         Text(
             "JARVIS personal assistant. Built to run entirely under your control — your API keys, " +

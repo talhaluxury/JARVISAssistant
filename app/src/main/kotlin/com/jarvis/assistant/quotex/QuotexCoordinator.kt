@@ -10,6 +10,12 @@ import com.jarvis.assistant.quotex.agent.InMemoryJournalStore
 import com.jarvis.assistant.quotex.agent.JournalEntry
 import com.jarvis.assistant.quotex.agent.JournalStore
 import com.jarvis.assistant.quotex.agent.QuotexJournal
+import com.jarvis.assistant.quotex.agent.NewsRiskFilter
+import com.jarvis.assistant.quotex.pro.LabPaperTracker
+import com.jarvis.assistant.quotex.pro.LabRuleStore
+import com.jarvis.assistant.quotex.pro.LabStatus
+import com.jarvis.assistant.quotex.pro.NewsEventCodec
+import com.jarvis.assistant.quotex.pro.PaperStat
 import com.jarvis.assistant.quotex.analysis.CandleBuilder
 import com.jarvis.assistant.quotex.analysis.CandleRuns
 import com.jarvis.assistant.quotex.analysis.ConfluenceEngine
@@ -78,11 +84,43 @@ class QuotexCoordinator(
         candleSeconds = config.candleSeconds, expiryCandles = config.expiryCandles, minCandles = config.minCandlesForSignal,
         modelCandleCap = config.modelCandleCap, breakEven = config.breakEvenAccuracy,
         requireVerifiedEdge = config.requireVerifiedEdge, edgeMinSamples = config.edgeMinSamples,
-        edgeZThreshold = config.edgeZThreshold
+        edgeZThreshold = config.edgeZThreshold,
+        minSetupScore = settings.minSetupScore, minDataQualityScore = settings.minDataQualityScore,
+        disabledStrategies = settings.disabledStrategies.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
+        middleSeconds = settings.mtfMiddleSeconds, higherSeconds = settings.mtfHigherSeconds,
+        blockHighVolatility = settings.blockHighVolatility
     )
 
+    /** UNAVAILABLE unless the user maintains a calendar; then their events (possibly none) are the truth. */
+    private fun buildNewsFilter(): NewsRiskFilter =
+        if (settings.newsCalendarEnabled) {
+            NewsRiskFilter(NewsEventCodec.parse(settings.newsEvents), highWindowMs = settings.newsHighWindowMin * 60_000L)
+        } else {
+            NewsRiskFilter(null)
+        }
+
+    private var labTracker = LabPaperTracker(config.expiryCandles, config.candleMs).also { it.load(settings.labPaperStats) }
+
+    /** Applies changed analysis settings (score/data-quality minimums, strategies, news, timeframes) without restarting capture. */
+    suspend fun applySettings() {
+        mutex.withLock {
+            agentRuntime = AgentRuntime(buildAgentConfig(), agentJournal, buildNewsFilter(), agentRuntime.mode)
+            lastAgentBacktest = null
+            candlesSinceBacktest = 0
+        }
+    }
+
+    fun labSummary(): String = com.jarvis.assistant.quotex.pro.ProNarrator.lab(LabRuleStore.parse(settings.labRules)) { labTracker.stat(it) }
+
+    fun labPaperStat(id: String): PaperStat = labTracker.stat(id)
+
+    fun resetLabPaper(id: String) {
+        labTracker.reset(id)
+        settings.labPaperStats = labTracker.dump()
+    }
+
     /** Section 26: SIMULATION until the user turns live analysis on. */
-    private var agentRuntime = AgentRuntime(buildAgentConfig(), agentJournal)
+    private var agentRuntime = AgentRuntime(buildAgentConfig(), agentJournal, buildNewsFilter())
     /** Candles closed since the last walk-forward refresh of the edge gate's evidence. */
     private var candlesSinceBacktest = 0
     private var lastAgentBacktest: AgentBacktestReport? = null
@@ -100,6 +138,9 @@ class QuotexCoordinator(
     private var chartSeen = 0
     /** Why the latest chart read was rejected (shown to the user so a failing detector can be diagnosed). */
     private var chartNote = ""
+
+    /** Optional hook for the DEMO paper-trading engine. Implementations only enqueue work; they never block or trade for real. */
+    @Volatile var demoFeed: com.jarvis.assistant.demotrade.DemoFeed? = null
 
     private val _state = MutableStateFlow(QuotexUiState())
     val state: StateFlow<QuotexUiState> = _state.asStateFlow()
@@ -177,7 +218,8 @@ class QuotexCoordinator(
 
     private suspend fun initialiseLocked(forAsset: String?) {
         config = settings.config()
-        agentRuntime = AgentRuntime(buildAgentConfig(), agentJournal, mode = agentRuntime.mode)
+        agentRuntime = AgentRuntime(buildAgentConfig(), agentJournal, buildNewsFilter(), agentRuntime.mode)
+        labTracker = LabPaperTracker(config.expiryCandles, config.candleMs).also { it.load(settings.labPaperStats) }
         lastAgentBacktest = null
         candlesSinceBacktest = 0
         riskEngine.updateConfig(settings.riskConfig())
@@ -321,6 +363,7 @@ class QuotexCoordinator(
             return false
         }
         lastPrice = price
+        demoFeed?.onTick(price)
         val closed = builder.add(timeMs, price)
         if (closed != null) {
             // The tick that closed the candle belongs to the NEXT candle, so score the closed one first.
@@ -339,7 +382,8 @@ class QuotexCoordinator(
         val candle = if (settings.useChartCandles) {
             val refined = com.jarvis.assistant.quotex.ocr.ChartRefiner.refine(sampled, chartCandles[sampled.openTimeMs])
             if (refined !== sampled) chartRefined++
-            refined
+            // the chart image knows nothing about tick activity: keep the count measured while the candle was being built
+            if (refined !== sampled && refined.ticks != sampled.ticks) refined.copy(ticks = sampled.ticks) else refined
         } else {
             sampled
         }
@@ -445,13 +489,23 @@ class QuotexCoordinator(
 
         refreshAgentBacktestLocked()
         agentRuntime.mode = if (settings.liveAnalysisEnabled) AgentMode.LIVE_ANALYSIS else AgentMode.SIMULATION
+        val labRules = LabRuleStore.parse(settings.labRules).map { it.toRule() }
         val riskNow = riskEngine.snapshot()
         val agentSnapshot = agentRuntime.onCandleClosed(
             candles = candles.toList(), nowMs = clock(), asset = name,
             weights = strategyTrackers.mapValues { it.value.weight() },
             riskPausedReason = if (riskNow.paused) "${riskNow.reason}" else null,
-            ocrConfidence = ocrConfidence
+            ocrConfidence = ocrConfidence,
+            labRules = labRules
         )
+        try {
+            if (labTracker.onCandleClosed(labRules.filter { it.status == LabStatus.PAPER_TESTING || it.status == LabStatus.ENABLED }, candles.toList())) {
+                settings.labPaperStats = labTracker.dump()
+            }
+        } catch (e: Exception) {
+            // Lab observation is optional; never let it break live analysis.
+        }
+        demoFeed?.onCandleClosed(candles.toList(), config.candleMs, name, lastPrice)
         publishLocked(prediction, resolvedMark, confluence, signalReading?.state, agentSnapshot)
     }
 
@@ -541,6 +595,9 @@ class QuotexCoordinator(
         return withContext(Dispatchers.Default) { AgentBacktester(agentCfg).run(slice) }
     }
 
+    /** Copy of the stored closed candles (chronological) for the Strategy Lab. */
+    suspend fun candlesSnapshot(): List<Candle> = mutex.withLock { candles.toList() }
+
     /** Newest-first journal entries (section 27). */
     fun journalLast(n: Int): List<JournalEntry> = agentJournal.last(n)
 
@@ -628,6 +685,12 @@ class QuotexCoordinator(
             if (added > 0) initialiseLocked(asset ?: byAsset.keys.firstOrNull())
             added
         }
+    }
+
+    /** The newest [n] stored candles, oldest first (for explanations and the AI record). */
+    suspend fun candlesTail(n: Int): List<Candle> {
+        ensureReady()
+        return mutex.withLock { candles.takeLast(n) }
     }
 
     fun currentConfig(): QuotexConfig = config

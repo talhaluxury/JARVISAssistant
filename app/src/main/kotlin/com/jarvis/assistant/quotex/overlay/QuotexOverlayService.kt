@@ -315,6 +315,9 @@ class QuotexOverlayService : Service() {
             // Section 30 body without its STATUS line (the big label above already is the status).
             for (line in ExplanationEngine.overlayLines(report, state.asset ?: "ASSET —", tfSeconds).drop(1).dropLast(1)) detail.appendLine(line)
             detail.appendLine("DATA: ${report.dataQuality.name}")
+            report.setupScore?.let { detail.appendLine("SETUP SCORE: $it/100 (strength, not a win probability)") }
+            report.entry?.let { detail.appendLine("ENTRY: ${it.quality.name}") }
+            report.warnings.take(2).forEach { detail.appendLine("\u2022 $it") }
             if (status == AgentStatus.SETUP_DETECTED) {
                 val life = agent.lifecycle
                 detail.appendLine("BIAS: ${report.direction.name} (analytical, not a guarantee)")

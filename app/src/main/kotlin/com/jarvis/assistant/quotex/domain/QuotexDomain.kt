@@ -11,7 +11,12 @@ data class Candle(
     val open: Double,
     val high: Double,
     val low: Double,
-    val close: Double
+    val close: Double,
+    /**
+     * Number of price readings that built this candle (tick activity). Quotex does not show real volume on the chart, so this
+     * is the only activity measure JARVIS can observe. 0 = unknown (candle read from the chart image or loaded from storage).
+     */
+    val ticks: Int = 0
 ) {
     val up: Boolean get() = close > open
 }

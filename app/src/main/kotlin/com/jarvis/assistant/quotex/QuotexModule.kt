@@ -38,7 +38,7 @@ class QuotexControls(private val context: Context) {
 }
 
 /** Single entry point wired into AppContainer (`container.quotex`). Everything is created lazily. */
-class QuotexModule(context: Context) {
+class QuotexModule(context: Context, private val aiService: com.jarvis.assistant.ai.AiService? = null) {
     private val appContext = context.applicationContext
     private val database: QuotexDatabase by lazy { QuotexDatabase.create(appContext) }
 
@@ -46,7 +46,7 @@ class QuotexModule(context: Context) {
     val repository: QuotexCandleRepository by lazy { QuotexCandleRepository(database.candleDao()) }
     val journal: QuotexJournalRepository by lazy { QuotexJournalRepository(database.journalDao()) }
     val coordinator: QuotexCoordinator by lazy { QuotexCoordinator(repository, settings, tradeJournal = journal, agentJournalStore = FileJournalStore(File(appContext.filesDir, "quotex_journal.tsv"))) }
-    val chat: QuotexChatController by lazy { QuotexChatController(coordinator) }
+    val chat: QuotexChatController by lazy { QuotexChatController(coordinator, aiService?.let { com.jarvis.assistant.quotex.voice.QuotexAiAssistant(it) }) }
     val controls: QuotexControls by lazy { QuotexControls(appContext) }
     val voice: QuotexVoiceController by lazy { QuotexVoiceController({ coordinator }, { chat }, controls) }
 }

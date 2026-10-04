@@ -8,6 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.jarvis.assistant.data.local.db.dao.CommandHistoryDao
 import com.jarvis.assistant.data.local.db.dao.ConversationDao
+import com.jarvis.assistant.data.local.db.dao.DemoTradeDao
 import com.jarvis.assistant.data.local.db.dao.KnowledgeDao
 import com.jarvis.assistant.data.local.db.dao.MemoryDao
 import com.jarvis.assistant.data.local.db.dao.MessageDao
@@ -16,6 +17,7 @@ import com.jarvis.assistant.data.local.db.dao.SystemEventDao
 import com.jarvis.assistant.data.local.db.dao.TaskOutcomeDao
 import com.jarvis.assistant.data.local.db.entity.CommandHistoryEntity
 import com.jarvis.assistant.data.local.db.entity.ConversationEntity
+import com.jarvis.assistant.data.local.db.entity.DemoTradeEntity
 import com.jarvis.assistant.data.local.db.entity.KnowledgeEntity
 import com.jarvis.assistant.data.local.db.entity.MemoryEntity
 import com.jarvis.assistant.data.local.db.entity.MessageEntity
@@ -27,9 +29,9 @@ import com.jarvis.assistant.data.local.db.entity.TaskOutcomeEntity
     entities = [
         MemoryEntity::class, ConversationEntity::class, MessageEntity::class,
         CommandHistoryEntity::class, TaskOutcomeEntity::class, SystemEventEntity::class, PreferenceEntity::class,
-        KnowledgeEntity::class
+        KnowledgeEntity::class, DemoTradeEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class JarvisDatabase : RoomDatabase() {
@@ -41,6 +43,7 @@ abstract class JarvisDatabase : RoomDatabase() {
     abstract fun systemEventDao(): SystemEventDao
     abstract fun preferenceDao(): PreferenceDao
     abstract fun knowledgeDao(): KnowledgeDao
+    abstract fun demoTradeDao(): DemoTradeDao
 
     companion object {
         @Volatile private var INSTANCE: JarvisDatabase? = null
@@ -121,13 +124,36 @@ abstract class JarvisDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * DEMO TRADING — v3 -> v4 adds the demo_trades table (closed paper trades). Pure addition: no existing table is touched.
+         * The SQL must match what Room generates for DemoTradeEntity exactly, otherwise Room refuses to open the database.
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `demo_trades` (
+                        `id` INTEGER NOT NULL,
+                        `asset` TEXT NOT NULL,
+                        `direction` TEXT NOT NULL,
+                        `result` TEXT NOT NULL,
+                        `pnl` REAL NOT NULL,
+                        `openedAtMs` INTEGER NOT NULL,
+                        `closedAtMs` INTEGER NOT NULL,
+                        `json` TEXT NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )""".trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_demo_trades_closedAtMs` ON `demo_trades` (`closedAtMs`)")
+            }
+        }
+
         fun getInstance(context: Context): JarvisDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     JarvisDatabase::class.java,
                     "jarvis_db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
             }
     }
 }

@@ -32,17 +32,20 @@ object CandleResampler {
         var low = 0.0
         var close = 0.0
         var count = 0
+        var ticks = 0
         for (c in candles) {
             val b = Math.floorDiv(c.openTimeMs, bucketMs) * bucketMs
             if (b != bucketStart) {
-                if (count >= factor) out.add(Candle(bucketStart, open, high, low, close))
+                if (count >= factor) out.add(Candle(bucketStart, open, high, low, close, ticks))
                 bucketStart = b
                 open = c.open
                 high = c.high
                 low = c.low
                 close = c.close
                 count = 1
+                ticks = c.ticks
             } else {
+                ticks += c.ticks
                 if (c.high > high) high = c.high
                 if (c.low < low) low = c.low
                 close = c.close
@@ -50,7 +53,7 @@ object CandleResampler {
             }
         }
         // The trailing bucket is only emitted if it is complete; an in-progress one is deliberately left out.
-        if (count >= factor) out.add(Candle(bucketStart, open, high, low, close))
+        if (count >= factor) out.add(Candle(bucketStart, open, high, low, close, ticks))
         return out
     }
 }
