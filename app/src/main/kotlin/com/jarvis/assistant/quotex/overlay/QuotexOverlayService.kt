@@ -311,6 +311,22 @@ class QuotexOverlayService : Service() {
         decisionView.setTextColor(color)
 
         val detail = StringBuilder()
+        val candleMsNow = tfSeconds * 1000L
+        val remainingMs = CandleClock.remainingMs(nowMs, candleMsNow)
+        val elapsedFraction = if (candleMsNow > 0) 1.0 - remainingMs.toDouble() / candleMsNow else 1.0
+        val enterNow = state.entryGuess?.takeIf { elapsedFraction <= 0.3 }
+        val guessToShow = enterNow ?: state.nextGuess
+        if (guessToShow != null) {
+            detail.appendLine("QUICK GUESS: ${guessToShow.label} ${guessToShow.arrow} (${guessToShow.strength.name})")
+            detail.appendLine(
+                if (enterNow != null) "ENTER NOW \u2192 candle abhi khula, pehle 30% me hi lagao"
+                else "ENTER IN ${CandleClock.format(remainingMs)} \u2192 agli candle ke open pe lagao"
+            )
+            if (guessToShow.reasons.isNotEmpty()) detail.appendLine("WHY: ${guessToShow.reasons.joinToString(", ")}")
+            val rec = if (state.guessTotal > 0) "${state.guessHits}/${state.guessTotal} (${(state.guessHits * 100 / state.guessTotal)}%)" else "abhi data nahi"
+            detail.appendLine("GUESS RECORD: $rec. Andaza hai, signal nahi. Demo me hi.")
+            detail.appendLine("-----")
+        }
         if (report != null) {
             // Section 30 body without its STATUS line (the big label above already is the status).
             for (line in ExplanationEngine.overlayLines(report, state.asset ?: "ASSET —", tfSeconds).drop(1).dropLast(1)) detail.appendLine(line)
@@ -329,10 +345,6 @@ class QuotexOverlayService : Service() {
             detail.append("MODE: ${agent.mode.name.replace('_', ' ')}")
         } else {
             detail.append(state.message ?: "Collecting price history…")
-        }
-        if (state.quickGuess.isNotBlank()) {
-            val arrow = if (state.quickGuess == "UP") "\u2B06" else "\u2B07"
-            detail.append("\nQUICK GUESS: ${state.quickGuess} $arrow (andaza only, signal nahi - demo me hi try karo)")
         }
         state.risk?.takeIf { it.paused }?.let { detail.append("\nTRADING PAUSED — ${it.reason}") }
         if (state.chartStatus.isNotBlank()) detail.append("\nCHART: ${state.chartStatus}")

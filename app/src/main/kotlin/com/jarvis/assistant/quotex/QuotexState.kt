@@ -46,8 +46,12 @@ data class QuotexUiState(
     val readerNote: String = "",
     /** Whether real chart candles are refining the sampled ones (section 31). */
     val chartStatus: String = "",
-    /** Rough momentum guess (UP / DOWN / empty). NOT a signal and not a probability - shown only as a labelled guess. */
-    val quickGuess: String = ""
+    /** Labelled guess for the NEXT candle (shown with a countdown to its open). NOT a signal, not a probability. */
+    val nextGuess: com.jarvis.assistant.quotex.agent.QuickGuess? = null,
+    /** The guess that was made for the candle that is forming right now (valid as an entry only for its first seconds). */
+    val entryGuess: com.jarvis.assistant.quotex.agent.QuickGuess? = null,
+    val guessHits: Int = 0,
+    val guessTotal: Int = 0
 )
 
 data class QuotexAnalytics(

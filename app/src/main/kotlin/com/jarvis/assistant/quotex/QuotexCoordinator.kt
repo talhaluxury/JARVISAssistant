@@ -400,6 +400,7 @@ class QuotexCoordinator(
             signalStateMachine = SignalStateMachine()
         }
         candles.add(candle)
+        scoreGuessLocked(candle)
         if (candles.size > config.maxCandlesKept) {
             val keep = candles.takeLast(config.maxCandlesKept / 2)
             candles.clear()
@@ -543,6 +544,9 @@ class QuotexCoordinator(
             !liveOn -> "Live analysis is off. Enable it in Quotex setup when ready."
             else -> shown?.waitReason
         }
+        refreshGuessesLocked()
+        val currentOpenMs = Math.floorDiv(clock(), config.candleMs) * config.candleMs
+        val nextOpenMs = currentOpenMs + config.candleMs
         _state.update {
             it.copy(
                 ready = true, asset = asset, lastPrice = lastPrice, candleCount = candles.size,
@@ -552,25 +556,40 @@ class QuotexCoordinator(
                 signalState = if (liveOn && signalState != null) signalState else it.signalState,
                 risk = risk, agent = agent ?: it.agent,
                 chartStatus = chartStatusText(),
-                quickGuess = quickGuessLocked()
+                nextGuess = guessesByOpen[nextOpenMs],
+                entryGuess = guessesByOpen[currentOpenMs],
+                guessHits = guessHits, guessTotal = guessTotal
             )
         }
     }
 
-    /** Plain momentum lean from the last few closed candles. A guess only: it never feeds signals, risk or the demo engine. */
-    private fun quickGuessLocked(): String {
-        val recent = candles.takeLast(6)
-        if (recent.size < 3) return ""
-        val net = recent.last().close - recent.first().open
-        val ups = recent.count { it.close > it.open }
-        val downs = recent.count { it.close < it.open }
-        return when {
-            net > 0 && ups >= downs -> "UP"
-            net < 0 && downs >= ups -> "DOWN"
-            net > 0 -> "UP"
-            net < 0 -> "DOWN"
-            else -> if (recent.last().close >= recent.last().open) "UP" else "DOWN"
-        }
+    private val guessesByOpen = LinkedHashMap<Long, com.jarvis.assistant.quotex.agent.QuickGuess>()
+    private var guessHits = 0
+    private var guessTotal = 0
+
+    /** Builds the guess for the next candle from closed candles plus the still-forming one (using the live price). */
+    private fun refreshGuessesLocked() {
+        val candleMs = config.candleMs
+        val now = clock()
+        val currentOpen = Math.floorDiv(now, candleMs) * candleMs
+        val nextOpen = currentOpen + candleMs
+        val price = lastPrice
+        val closed = candles.filter { it.openTimeMs < currentOpen }
+        if (closed.isEmpty()) return
+        val series = if (price != null) {
+            val prev = closed.last().close
+            closed + Candle(currentOpen, prev, maxOf(prev, price), minOf(prev, price), price)
+        } else closed
+        com.jarvis.assistant.quotex.agent.QuickGuessEngine.guess(series, nextOpen)?.let { guessesByOpen[nextOpen] = it }
+        while (guessesByOpen.size > 8) guessesByOpen.remove(guessesByOpen.keys.first())
+    }
+
+    /** Scores the guess that was made for a candle once that candle has closed. Flat candles are skipped. */
+    private fun scoreGuessLocked(candle: Candle) {
+        val g = guessesByOpen.remove(candle.openTimeMs) ?: return
+        if (candle.close == candle.open) return
+        guessTotal++
+        if (g.up == (candle.close > candle.open)) guessHits++
     }
 
     private fun chartStatusText(): String = when {
