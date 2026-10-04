@@ -167,8 +167,10 @@ object Indicators {
         for (i in 1 until n) {
             val upMove = highs[i] - highs[i - 1]
             val downMove = lows[i - 1] - lows[i]
-            plusDm[i] = if (upMove > downMove && upMove > 0) upMove else 0.0
-            minusDm[i] = if (downMove > upMove && downMove > 0) downMove else 0.0
+            // Moves that differ only by floating-point noise (1e-9 of the price) are ties: neither side gets directional movement.
+            val eps = 1e-9 * kotlin.math.abs(closes[i - 1])
+            plusDm[i] = if (upMove > downMove + eps && upMove > eps) upMove else 0.0
+            minusDm[i] = if (downMove > upMove + eps && downMove > eps) downMove else 0.0
             tr[i] = maxOf(highs[i] - lows[i], kotlin.math.abs(highs[i] - closes[i - 1]), kotlin.math.abs(lows[i] - closes[i - 1]))
         }
         var smoothTr = 0.0

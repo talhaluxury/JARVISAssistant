@@ -7,15 +7,16 @@ package com.jarvis.assistant.quotex.ocr
  */
 class CountdownTimeframe(private val clockMs: () -> Long = { System.currentTimeMillis() }) {
     private var max = 0
-    private var firstAt = 0L
+    // null = nothing seen yet (0 is a valid clock value, so it can't be the "unset" marker)
+    private var firstAt: Long? = null
 
-    fun reset() { max = 0; firstAt = 0L }
+    fun reset() { max = 0; firstAt = null }
 
     /** Feed one reading's countdown (seconds, or null). Returns the standard timeframe once it is certain, else null. */
     fun add(countdownSec: Int?): Int? {
         if (countdownSec == null || countdownSec <= 0 || countdownSec > 3600) return result()
         val now = clockMs()
-        if (firstAt == 0L) firstAt = now
+        if (firstAt == null) firstAt = now
         if (countdownSec > max) max = countdownSec
         return result()
     }
@@ -24,7 +25,7 @@ class CountdownTimeframe(private val clockMs: () -> Long = { System.currentTimeM
         if (max == 0) return null
         val tf = STANDARD.firstOrNull { it >= max } ?: return null
         // Certain only after a whole candle has passed (a new candle restarts the countdown at the full length).
-        val observedMs = clockMs() - firstAt
+        val observedMs = clockMs() - (firstAt ?: return null)
         return if (observedMs >= tf * 1200L) tf else null
     }
 

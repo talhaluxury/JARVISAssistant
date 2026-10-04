@@ -75,7 +75,10 @@ object LocalIntentRouter {
         val trimmed = text.trim()
         extractSearchQuery(trimmed)?.let { query -> return JarvisCommand.SearchCurrentApp(query) }
 
-        extractAppToOpen(trimmed)?.let { app -> return JarvisCommand.OpenApp(app) }
+        // Use the user's original casing for the app name ("YouTube", not "youtube");
+        // matching itself is case-insensitive.
+        val original = rawText.trim().replace(Regex("[.,!?،؟]"), "").trim()
+        extractAppToOpen(original)?.let { app -> return JarvisCommand.OpenApp(app) }
 
         return null
     }
@@ -285,10 +288,10 @@ object LocalIntentRouter {
 
     // Captures the app name out of "X kholo" / "open X" / "X open karo" / "X chalao" style phrases.
     private val OPEN_APP_PATTERNS = listOf(
-        Regex("""^open (.+)"""),
-        Regex("""^(.+?) kholo$"""),
-        Regex("""^(.+?) open karo$"""),
-        Regex("""^(.+?) chalao$"""),
-        Regex("""^(.+?) open kar do$""")
+        Regex("""^open (.+)""", RegexOption.IGNORE_CASE),
+        Regex("""^(.+?) kholo$""", RegexOption.IGNORE_CASE),
+        Regex("""^(.+?) open karo$""", RegexOption.IGNORE_CASE),
+        Regex("""^(.+?) chalao$""", RegexOption.IGNORE_CASE),
+        Regex("""^(.+?) open kar do$""", RegexOption.IGNORE_CASE)
     )
 }

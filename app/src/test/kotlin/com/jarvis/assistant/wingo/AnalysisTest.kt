@@ -142,9 +142,15 @@ class AnalysisTest {
         repeat(100) { good.record(true) }
         assertEquals(2.0, good.weight(), 1e-9)
 
+        val weak = ModelTracker()
+        repeat(60) { weak.record(false) }
+        assertEquals(0.1, weak.weight(), 1e-9) // clearly poor, but not enough samples to switch it off yet
+        assertFalse(weak.isDisabled())
+
         val bad = ModelTracker()
         repeat(100) { bad.record(false) }
-        assertEquals(0.1, bad.weight(), 1e-9)
+        assertTrue(bad.isDisabled()) // 100 samples clearly below chance: the model is switched off
+        assertEquals(0.0, bad.weight(), 1e-9)
 
         val neutral = ModelTracker()
         repeat(50) { neutral.record(true); neutral.record(false) }

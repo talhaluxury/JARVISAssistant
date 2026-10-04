@@ -49,7 +49,8 @@ class TechnicalIndicatorsTest {
 
     @Test
     fun macdHistogramPositiveInUptrend() {
-        val uptrend = (1..60).map { it.toDouble() }
+        // Accelerating uptrend. (A perfectly straight line gives a constant MACD line, so its histogram is exactly 0.)
+        val uptrend = (1..60).map { it.toDouble() * it }
         val macd = TechnicalIndicators.macd(uptrend)
         val lastHistogram = macd.histogram.filterNotNull().last()
         assertTrue("expected positive histogram (fast EMA above slow) in uptrend, was $lastHistogram", lastHistogram > 0.0)

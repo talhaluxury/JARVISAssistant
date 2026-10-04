@@ -29,7 +29,8 @@ class MarketStructureTest {
         val lows = DoubleArray(40) { 1.0 - (it % 2) * 0.5 }
         val closes = DoubleArray(40) { 1.0 }
         val atr = Indicators.atr(highs, lows, closes, 14)
-        assertTrue(atr[30] > 0.5)
+        // true range alternates 0 / 1.0, so Wilder's ATR oscillates around 0.5 (about 0.48 right after a 0 candle)
+        assertTrue(atr[30] > 0.4)
     }
 
     @Test

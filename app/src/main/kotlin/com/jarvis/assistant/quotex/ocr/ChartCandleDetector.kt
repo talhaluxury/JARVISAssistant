@@ -139,7 +139,7 @@ class ChartCandleDetector(
 
         // A run that is a whole multiple of the typical width is several touching candles: cut it into equal slots.
         // Runs much narrower than a candle (price tag, line fragments) are junk and ignored.
-        class Slot(val ink: Ink, val x0: Int, val x1: Int) { val centre get() = (x0 + x1) / 2.0 }
+        class Slot(val ink: Ink, val x0: Int, val x1: Int, val single: Boolean) { val centre get() = (x0 + x1) / 2.0 }
         val slots = ArrayList<Slot?>() // null = a run that is neither one candle nor a clean multiple: a barrier
         for (r in sized) {
             val w = r.x1 - r.x0 + 1
@@ -149,12 +149,15 @@ class ChartCandleDetector(
             for (i in 0 until n) {
                 val a = r.x0 + (i * w.toDouble() / n).roundToInt()
                 val b = r.x0 + ((i + 1) * w.toDouble() / n).roundToInt() - 1
-                slots.add(Slot(r.ink, a, maxOf(a, b)))
+                slots.add(Slot(r.ink, a, maxOf(a, b), n == 1))
             }
         }
         val real = slots.filterNotNull()
         if (real.size < minCandles) return none("Only ${real.size} candles found (need $minCandles).")
-        val sortedGaps = real.zipWithNext { a, b -> b.centre - a.centre }.sorted()
+        // Gaps inside a merged block are artificial (one candle width), so the typical spacing is measured between
+        // candles that were drawn as separate runs. Fall back to all gaps only when there are too few of those.
+        val cleanGaps = real.zipWithNext().filter { (a, b) -> a.single && b.single }.map { (a, b) -> b.centre - a.centre }
+        val sortedGaps = (if (cleanGaps.size >= 2) cleanGaps else real.zipWithNext { a, b -> b.centre - a.centre }).sorted()
         val medGap = sortedGaps[sortedGaps.size / 4]
         val pitch = sortedGaps[sortedGaps.size / 2]
 

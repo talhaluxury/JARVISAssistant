@@ -49,7 +49,7 @@ class VwapActivityTest {
         val w = TA.activityWeights(c)
         assertEquals(10.0, w[0], 1e-12)
         assertEquals(11.0, w[1], 1e-12)
-        assertEquals(12.5, w[2], 1e-12) // median of 10, 11, 13, 14
+        assertEquals(12.0, w[2], 1e-12) // median of 10, 11, 13, 14 = (11 + 13) / 2
         assertEquals(14.0, w[4], 1e-12)
     }
 
