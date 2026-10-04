@@ -32,7 +32,7 @@ class QuotexChatController(private val coordinator: QuotexCoordinator, private v
             "analyze chart" in t || "analyse chart" in t || "show current signal" in t || "current signal" in t -> ProNarrator.signal(state.agent)
             "show reasons" in t || "reasons" in t && "show" in t -> ProNarrator.reasons(state.agent)
             "strategy lab" in t || "my strategies" in t -> coordinator.labSummary()
-            "news" in t -> ProNarrator.news(state.agent)
+            "news" in t -> ProNarrator.news(state.agent?.report)
             "market structure" in t -> ProNarrator.structure(state.agent)
             "historical performance" in t || "show history" in t -> ProNarrator.performance(coordinator.journalLast(500))
             "monte carlo" in t || "robustness" in t -> ProNarrator.monteCarlo(coordinator.journalLast(500))
