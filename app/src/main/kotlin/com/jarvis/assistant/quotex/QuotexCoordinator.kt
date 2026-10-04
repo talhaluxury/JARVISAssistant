@@ -551,8 +551,25 @@ class QuotexCoordinator(
                 confluence = if (liveOn && !risk.paused) (confluence ?: it.confluence) else null,
                 signalState = if (liveOn && signalState != null) signalState else it.signalState,
                 risk = risk, agent = agent ?: it.agent,
-                chartStatus = chartStatusText()
+                chartStatus = chartStatusText(),
+                quickGuess = quickGuessLocked()
             )
+        }
+    }
+
+    /** Plain momentum lean from the last few closed candles. A guess only: it never feeds signals, risk or the demo engine. */
+    private fun quickGuessLocked(): String {
+        val recent = candles.takeLast(6)
+        if (recent.size < 3) return ""
+        val net = recent.last().close - recent.first().open
+        val ups = recent.count { it.close > it.open }
+        val downs = recent.count { it.close < it.open }
+        return when {
+            net > 0 && ups >= downs -> "UP"
+            net < 0 && downs >= ups -> "DOWN"
+            net > 0 -> "UP"
+            net < 0 -> "DOWN"
+            else -> if (recent.last().close >= recent.last().open) "UP" else "DOWN"
         }
     }
 

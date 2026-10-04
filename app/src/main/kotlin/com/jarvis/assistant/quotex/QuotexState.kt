@@ -45,7 +45,9 @@ data class QuotexUiState(
     /** Last thing the screen reader reported (why the chart / price / asset was or was not found). */
     val readerNote: String = "",
     /** Whether real chart candles are refining the sampled ones (section 31). */
-    val chartStatus: String = ""
+    val chartStatus: String = "",
+    /** Rough momentum guess (UP / DOWN / empty). NOT a signal and not a probability - shown only as a labelled guess. */
+    val quickGuess: String = ""
 )
 
 data class QuotexAnalytics(

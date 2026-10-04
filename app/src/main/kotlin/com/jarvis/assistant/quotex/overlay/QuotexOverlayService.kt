@@ -330,6 +330,10 @@ class QuotexOverlayService : Service() {
         } else {
             detail.append(state.message ?: "Collecting price history…")
         }
+        if (state.quickGuess.isNotBlank()) {
+            val arrow = if (state.quickGuess == "UP") "\u2B06" else "\u2B07"
+            detail.append("\nQUICK GUESS: ${state.quickGuess} $arrow (andaza only, signal nahi - demo me hi try karo)")
+        }
         state.risk?.takeIf { it.paused }?.let { detail.append("\nTRADING PAUSED — ${it.reason}") }
         if (state.chartStatus.isNotBlank()) detail.append("\nCHART: ${state.chartStatus}")
         if (state.screenStatus != ScreenStatus.TRACKING && state.readerNote.isNotBlank()) detail.append("\nREADER: ${state.readerNote}")
