@@ -58,7 +58,7 @@ into `NewsRiskFilter` yourself; without them news risk shows UNAVAILABLE), no or
 - State machine: new WAITING state (weak evidence). Risk engine: max trades/day, max trades/hour, max daily stake exposure
   (settings keys `max_trades_day`, `max_trades_hour`, `max_daily_exposure`, no UI sliders yet).
 - Dashboard: new MARKET REGIME panel (regime, session, news, strategies allowed by `RegimeGate`).
-- Accessibility service refuses tap/long-press/type/swipe while a window whose package contains "quotex" is in the foreground. The single exception is `tradeTap` (AUTO DEMO TRADE switch): it taps Buy/Sell only when the top of the Quotex screen reads DEMO, refuses on LIVE or an unreadable label, fires at most once per candle in its first 30%, and the switch turns off after 20 taps.
+- Accessibility service refuses tap/long-press/type/swipe while a window whose package contains "quotex" is in the foreground. The single exception is `tradeTap` (AUTO DEMO TRADE switch): it taps Buy/Sell only when the top of the Quotex screen reads DEMO, and refuses on LIVE or an unreadable label. The overlay switch only calls it for a STRONG guess that the AI second opinion (when an AI key is set) also confirms with 60%+ confidence, at most once per candle in its first 30%, at least 3 candles apart, and it turns itself off after 5 trades or 2 wrong trades in a row. The AI can only veto a tap, never start one.
   (A browser tab showing Quotex cannot be detected this way.)
 - EMA100/200 were already used by EMA Structure; it now reads `series.ema100/ema200`.
 

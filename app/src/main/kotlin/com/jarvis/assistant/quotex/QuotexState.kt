@@ -52,6 +52,9 @@ data class QuotexUiState(
     val entryGuess: com.jarvis.assistant.quotex.agent.QuickGuess? = null,
     /** Last up to 10 closed candles, oldest first: true = green, false = red (drawn as little coloured bars). */
     val recentUp: List<Boolean> = emptyList(),
+    /** Open time and colour of the newest closed candle (used to score an auto trade once its candle has closed). */
+    val lastClosedOpenMs: Long = 0L,
+    val lastClosedUp: Boolean? = null,
     val guessHits: Int = 0,
     val guessTotal: Int = 0
 )

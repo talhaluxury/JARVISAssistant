@@ -559,6 +559,8 @@ class QuotexCoordinator(
                 nextGuess = guessesByOpen[nextOpenMs],
                 entryGuess = guessesByOpen[currentOpenMs],
                 recentUp = candles.takeLast(10).map { c -> c.close > c.open },
+                lastClosedOpenMs = candles.lastOrNull()?.openTimeMs ?: 0L,
+                lastClosedUp = candles.lastOrNull()?.let { c -> if (c.close == c.open) null else c.close > c.open },
                 guessHits = guessHits, guessTotal = guessTotal
             )
         }

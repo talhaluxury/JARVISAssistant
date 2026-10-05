@@ -67,6 +67,15 @@ class QuotexOverlayService : Service() {
     private var autoTaps = 0
     private var lastAutoOpenMs = -1L
     private var autoStatus = ""
+    private var autoWait = ""
+    private var autoPending: Pair<Long, Boolean>? = null
+    private var lastTradeOpenMs = 0L
+    private var missStreak = 0
+    private lateinit var aiView: TextView
+    private val aiVerdicts = LinkedHashMap<Long, com.jarvis.assistant.quotex.agent.AiVerdict>()
+    private var aiAskedFor = 0L
+    private var aiInFlight = false
+    private var lastAiRequestMs = 0L
     private lateinit var heroCard: LinearLayout
     private lateinit var heroArrow: TextView
     private lateinit var heroStrength: TextView
@@ -291,6 +300,14 @@ class QuotexOverlayService : Service() {
         statRecord = statBox("RECORD")
         panel.addView(statsRow)
 
+        aiView = label("", 10f, MUTED).apply {
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+            background = rounded(CARD, STROKE_DIM, 8)
+        }
+        val aiLp = lp(match, wrap)
+        aiLp.topMargin = dp(8)
+        panel.addView(aiView, aiLp)
+
         // 4) Last 10 candles as green / red bars.
         val stripRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -466,10 +483,15 @@ class QuotexOverlayService : Service() {
             autoOn = true
             autoTaps = 0
             lastAutoOpenMs = -1L
-            autoStatus = "Demo check ho raha hai..."
+            lastTradeOpenMs = 0L
+            missStreak = 0
+            autoPending = null
+            autoWait = ""
+            autoStatus = "Sirf STRONG + AI agree par trade hogi"
         } else {
             autoOn = false
             autoStatus = ""
+            autoWait = ""
         }
         renderAuto()
     }
@@ -485,11 +507,16 @@ class QuotexOverlayService : Service() {
             autoBtn.setTextColor(CYAN)
             autoBtn.background = rounded(Color.TRANSPARENT, CYAN, 10)
         }
-        autoStatusView.text = autoStatus
-        autoStatusView.visibility = if (autoStatus.isBlank()) View.GONE else View.VISIBLE
+        val statusText = (autoStatus + (if (autoOn && autoWait.isNotBlank()) "\n$autoWait" else "")).trim()
+        autoStatusView.text = statusText
+        autoStatusView.visibility = if (statusText.isBlank()) View.GONE else View.VISIBLE
     }
 
-    /** Fires one Buy/Sell tap per candle, inside the first 30% of it, using the guess that was made before the candle opened. */
+    /**
+     * Selective auto trade. A tap happens only when ALL of these hold: the guess for this candle is STRONG, the AI (when a key
+     * is configured) agrees with at least [AI_MIN_CONFIDENCE]% confidence, at least [MIN_GAP_CANDLES] candles passed since the
+     * last auto trade, we are inside the first 30% of the candle, and the run has not hit its trade cap or miss streak.
+     */
     private fun autoTick() {
         if (!autoOn || root == null) return
         val s = lastState
@@ -498,13 +525,60 @@ class QuotexOverlayService : Service() {
         if (candleMs <= 0L) return
         val now = System.currentTimeMillis()
         val currentOpen = Math.floorDiv(now, candleMs) * candleMs
+
+        // Score the previous auto trade once its candle has closed.
+        autoPending?.let { (openMs, wasUp) ->
+            if (s.lastClosedOpenMs >= openMs) {
+                autoPending = null
+                val closedUp = s.lastClosedUp
+                if (s.lastClosedOpenMs == openMs && closedUp != null) {
+                    missStreak = if (closedUp == wasUp) 0 else missStreak + 1
+                    autoStatus = (if (closedUp == wasUp) "\u2705 pichli trade sahi gayi" else "\u274C pichli trade galat gayi") + " (galat lagatar: $missStreak)"
+                    if (missStreak >= MAX_MISS_STREAK) {
+                        autoOn = false
+                        autoWait = ""
+                        autoStatus = "$MAX_MISS_STREAK galat lagatar, auto band. Record dekho."
+                        renderAuto()
+                        return
+                    }
+                }
+            }
+        }
+
         if (lastAutoOpenMs == currentOpen) return
         if (now - currentOpen > (candleMs * ENTRY_WINDOW).toLong()) return
-        val g = (s.entryGuess ?: s.nextGuess)?.takeIf { it.forOpenMs == currentOpen } ?: return
+        if (lastTradeOpenMs > 0L && currentOpen - lastTradeOpenMs < MIN_GAP_CANDLES * candleMs) {
+            autoWait = "Gap: pichli trade ke baad $MIN_GAP_CANDLES candle ruko"
+            return
+        }
+        val g = (s.entryGuess ?: s.nextGuess)?.takeIf { it.forOpenMs == currentOpen }
+        if (g == null) {
+            autoWait = "Guess ka intezar..."
+            return
+        }
+        if (g.strength != com.jarvis.assistant.quotex.agent.GuessStrength.STRONG) {
+            autoWait = "Guess ${g.strength.name} hai, STRONG chahiye"
+            return
+        }
+        if (module.advisor != null) {
+            val v = aiVerdicts[currentOpen]
+            if (v == null) {
+                autoWait = if (aiInFlight) "AI soch raha hai..." else "AI jawab nahi aaya (tez candle me der ho jati hai)"
+                return
+            }
+            if (v.call != g.label || v.confidence < AI_MIN_CONFIDENCE) {
+                autoWait = "AI agree nahi (${v.call} ${v.confidence}%): skip"
+                lastAutoOpenMs = currentOpen
+                return
+            }
+        }
         val result = JarvisAccessibilityService.tradeTap(g.up)
         if (result.ok) {
             lastAutoOpenMs = currentOpen
+            lastTradeOpenMs = currentOpen
+            autoPending = currentOpen to g.up
             autoTaps++
+            autoWait = ""
             autoStatus = "\u2714 ${result.message} #$autoTaps"
             if (autoTaps >= MAX_AUTO_TAPS) {
                 autoOn = false
@@ -515,6 +589,25 @@ class QuotexOverlayService : Service() {
             if (result.liveBlocked) autoOn = false
         }
         renderAuto()
+    }
+
+    /** Asks the AI about a STRONG upcoming guess (one request per candle, one at a time, at most every 8 seconds). */
+    private fun maybeAskAi(state: QuotexUiState) {
+        val advisor = module.advisor
+        val g = state.nextGuess
+        if (advisor == null || g == null || g.strength != com.jarvis.assistant.quotex.agent.GuessStrength.STRONG) return
+        if (aiInFlight || aiAskedFor == g.forOpenMs || aiVerdicts.containsKey(g.forOpenMs)) return
+        val now = System.currentTimeMillis()
+        if (now - lastAiRequestMs < 8_000L) return
+        aiInFlight = true
+        aiAskedFor = g.forOpenMs
+        lastAiRequestMs = now
+        scope.launch {
+            val verdict = try { advisor.verdict(g) } catch (e: Exception) { null }
+            if (verdict != null) aiVerdicts[g.forOpenMs] = verdict
+            while (aiVerdicts.size > 6) aiVerdicts.remove(aiVerdicts.keys.first())
+            aiInFlight = false
+        }
     }
 
     private fun setHero(accent: Int, fill: Int, arrow: String, sub: String, bars: Int) {
@@ -687,6 +780,22 @@ class QuotexOverlayService : Service() {
         if (state.chartStatus.isNotBlank()) detail.append("\nCHART: ${state.chartStatus}")
         if (state.screenStatus != ScreenStatus.TRACKING && state.readerNote.isNotBlank()) detail.append("\nREADER: ${state.readerNote}")
         detailText = detail.toString().trimEnd()
+        maybeAskAi(state)
+        val shown = g
+        val verdict = shown?.let { aiVerdicts[it.forOpenMs] }
+        when {
+            module.advisor == null -> { aiView.text = "AI: key nahi hai (Settings me add karo)"; aiView.setTextColor(MUTED) }
+            shown == null -> { aiView.text = "AI: guess ka intezar"; aiView.setTextColor(MUTED) }
+            verdict != null -> {
+                val agrees = verdict.call == shown.label
+                aiView.text = "AI: ${verdict.call} ${verdict.confidence}%" + (if (verdict.reason.isNotBlank()) " - ${verdict.reason}" else "") +
+                    if (verdict.call == "SKIP") "" else if (agrees) "  (guess se agree)" else "  (guess se alag)"
+                aiView.setTextColor(if (verdict.call == "SKIP") AMBER else if (agrees) GREEN else RED)
+            }
+            aiInFlight -> { aiView.text = "AI: soch raha hai..."; aiView.setTextColor(AMBER) }
+            shown.strength != com.jarvis.assistant.quotex.agent.GuessStrength.STRONG -> { aiView.text = "AI: sirf STRONG guess par poochta hai"; aiView.setTextColor(MUTED) }
+            else -> { aiView.text = "AI: pooch raha hun..."; aiView.setTextColor(MUTED) }
+        }
         renderAuto()
         renderContent()
     }
@@ -802,7 +911,12 @@ class QuotexOverlayService : Service() {
         /** A guess counts as "ENTER NOW" only during the first 30% of a candle. */
         private const val ENTRY_WINDOW = 0.3
         /** Safety cap: the auto switch turns itself off after this many taps in one run. */
-        private const val MAX_AUTO_TAPS = 20
+        private const val MAX_AUTO_TAPS = 5
+        /** Minimum candles between two auto trades (no back-to-back trading). */
+        private const val MIN_GAP_CANDLES = 3
+        /** The run stops after this many wrong auto trades in a row. */
+        private const val MAX_MISS_STREAK = 2
+        private const val AI_MIN_CONFIDENCE = 60
 
         fun show(context: Context) {
             try {
