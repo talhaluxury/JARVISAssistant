@@ -20,12 +20,15 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.jarvis.assistant.JarvisApplication
+import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 import com.jarvis.assistant.quotex.QuotexModule
 import com.jarvis.assistant.quotex.QuotexUiState
 import com.jarvis.assistant.quotex.agent.AgentNarrator
 import com.jarvis.assistant.quotex.agent.AgentStatus
 import com.jarvis.assistant.quotex.agent.CandleClock
 import com.jarvis.assistant.quotex.agent.ExplanationEngine
+import com.jarvis.assistant.quotex.agent.GuessStrength
+import com.jarvis.assistant.quotex.agent.QuickGuessEngine
 import com.jarvis.assistant.wingo.ScreenStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +39,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 /**
- * Floating JARVIS HUD for the Quotex analyzer with a small chat box. Information only: nothing on it
+ * Floating JARVIS HUD for the Quotex analyzer with a small chat box. Mostly information; the only action it can trigger is the opt-in AUTO DEMO TRADE switch. Nothing else on it
  * acts on the trading app. FLAG_SECURE keeps the HUD out of the screen capture.
  */
 class QuotexOverlayService : Service() {
@@ -58,8 +61,29 @@ class QuotexOverlayService : Service() {
     private lateinit var pill: TextView
     private lateinit var panel: LinearLayout
     private lateinit var assetView: TextView
-    private lateinit var decisionView: TextView
-    private lateinit var detailView: TextView
+    private lateinit var autoBtn: TextView
+    private lateinit var autoStatusView: TextView
+    private var autoOn = false
+    private var autoTaps = 0
+    private var lastAutoOpenMs = -1L
+    private var autoStatus = ""
+    private lateinit var heroCard: LinearLayout
+    private lateinit var heroArrow: TextView
+    private lateinit var heroStrength: TextView
+    private val strengthBars = ArrayList<View>()
+    private lateinit var timerChip: TextView
+    private lateinit var timerView: TextView
+    private lateinit var progressFill: View
+    private lateinit var progressRest: View
+    private lateinit var statTrend: TextView
+    private lateinit var statData: TextView
+    private lateinit var statRecord: TextView
+    private val candleDots = ArrayList<View>()
+    private lateinit var whyBox: LinearLayout
+    private lateinit var noteView: TextView
+    private lateinit var contentScroll: ScrollView
+    private var contentOpen = false
+    private var detailText = ""
     private lateinit var contentView: TextView
     private lateinit var chatRow: LinearLayout
     private lateinit var input: EditText
@@ -88,6 +112,13 @@ class QuotexOverlayService : Service() {
             scope.launch {
                 withContext(Dispatchers.Default) { module.coordinator.ensureReady() }
                 module.coordinator.state.collect { render(it) }
+            }
+            // Fast loop for the demo auto-tap so it fires right at the candle open (the 1s redraw is too coarse for short candles).
+            scope.launch {
+                while (true) {
+                    kotlinx.coroutines.delay(150)
+                    autoTick()
+                }
             }
             // Re-draw once a second so the "next candle in" countdown keeps moving between price updates.
             scope.launch {
@@ -162,33 +193,156 @@ class QuotexOverlayService : Service() {
         })
         panel.addView(header)
 
-        assetView = label("ASSET —", 10f, MUTED)
-        decisionView = label("WAIT", 22f, MUTED, bold = true)
-        detailView = label("", 11f, Color.WHITE)
-        panel.addView(assetView)
-        panel.addView(decisionView)
-        panel.addView(detailView)
+        val match = LinearLayout.LayoutParams.MATCH_PARENT
+        val wrap = LinearLayout.LayoutParams.WRAP_CONTENT
+        fun lp(w: Int, h: Int, weight: Float = 0f) = LinearLayout.LayoutParams(w, h, weight)
 
-        val tabs = LinearLayout(this).apply {
+        assetView = label("ASSET —", 10f, MUTED)
+        panel.addView(assetView)
+
+        autoBtn = label("AUTO DEMO TRADE: OFF", 11f, CYAN, bold = true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(6), dp(9), dp(6), dp(9))
+            background = rounded(Color.TRANSPARENT, CYAN, 10)
+            setOnClickListener { toggleAuto() }
+        }
+        val autoLp = lp(match, wrap)
+        autoLp.topMargin = dp(6)
+        panel.addView(autoBtn, autoLp)
+        autoStatusView = label("", 9f, MUTED).apply { setPadding(0, dp(3), 0, 0) }
+        panel.addView(autoStatusView)
+
+        // 1) Big direction card: arrow + word + 3 strength bars.
+        heroCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(8), dp(10), dp(8), dp(10))
+            background = rounded(NEUTRAL_FILL, MUTED, 14)
+        }
+        heroArrow = label("…", 30f, MUTED, bold = true).apply { gravity = Gravity.CENTER }
+        heroStrength = label("", 11f, MUTED, bold = true).apply { gravity = Gravity.CENTER }
+        val bars = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(6), 0, 0)
+        }
+        for (n in 0 until 3) {
+            val bar = View(this).apply { background = rounded(CARD, STROKE_DIM, 3) }
+            val barLp = lp(dp(30), dp(7))
+            barLp.leftMargin = dp(3)
+            barLp.rightMargin = dp(3)
+            bars.addView(bar, barLp)
+            strengthBars.add(bar)
+        }
+        heroCard.addView(heroArrow)
+        heroCard.addView(heroStrength)
+        heroCard.addView(bars)
+        val heroLp = lp(match, wrap)
+        heroLp.topMargin = dp(6)
+        panel.addView(heroCard, heroLp)
+
+        // 2) Countdown: chip (ENTER IN / ENTER NOW) + big timer + progress bar of the candle.
+        val timerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(8), 0, dp(4))
         }
+        timerChip = label("", 11f, AMBER, bold = true).apply {
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            background = rounded(Color.TRANSPARENT, AMBER, 8)
+        }
+        timerView = label("--:--", 22f, Color.WHITE, bold = true).apply { gravity = Gravity.END }
+        timerRow.addView(timerChip, lp(0, wrap, 1f))
+        timerRow.addView(timerView)
+        panel.addView(timerRow)
+        val progress = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = rounded(CARD, Color.TRANSPARENT, 4)
+        }
+        progressFill = View(this).apply { background = rounded(AMBER, AMBER, 4) }
+        progressRest = View(this)
+        progress.addView(progressFill, lp(0, dp(7), 0f))
+        progress.addView(progressRest, lp(0, dp(7), 1f))
+        panel.addView(progress, lp(match, dp(7)))
+
+        // 3) Three small status boxes: trend / data quality / guess record.
+        val statsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        fun statBox(caption: String): TextView {
+            val box = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(dp(4), dp(5), dp(4), dp(5))
+                background = rounded(CARD, STROKE_DIM, 8)
+            }
+            box.addView(label(caption, 8f, MUTED).apply { gravity = Gravity.CENTER })
+            val value = label("—", 11f, MUTED, bold = true).apply { gravity = Gravity.CENTER }
+            box.addView(value)
+            val boxLp = lp(0, wrap, 1f)
+            boxLp.leftMargin = dp(2)
+            boxLp.rightMargin = dp(2)
+            statsRow.addView(box, boxLp)
+            return value
+        }
+        statTrend = statBox("TREND")
+        statData = statBox("DATA")
+        statRecord = statBox("RECORD")
+        panel.addView(statsRow)
+
+        // 4) Last 10 candles as green / red bars.
+        val stripRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        stripRow.addView(label("LAST", 9f, MUTED).apply { setPadding(0, 0, dp(6), 0) })
+        for (n in 0 until 10) {
+            val dot = View(this).apply { background = rounded(CARD, STROKE_DIM, 2) }
+            val dotLp = lp(dp(12), dp(16))
+            dotLp.rightMargin = dp(3)
+            stripRow.addView(dot, dotLp)
+            candleDots.add(dot)
+        }
+        panel.addView(stripRow)
+
+        // 5) Why chips + short honest note.
+        whyBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        panel.addView(whyBox)
+        noteView = label("", 9f, MUTED).apply { setPadding(0, dp(8), 0, dp(4)) }
+        panel.addView(noteView)
+
+        // 6) Real buttons. Tap once to open, tap again to close.
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(4), 0, dp(6))
+        }
         for ((t, name) in listOf(Tab.DETAILS to "DETAILS", Tab.HISTORY to "HISTORY", Tab.CHAT to "CHAT")) {
-            val tv = label(name, 11f, MUTED, bold = true).apply {
-                setPadding(0, 0, dp(14), 0)
+            val tv = label(name, 10f, CYAN, bold = true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(2), dp(8), dp(2), dp(8))
+                background = rounded(Color.TRANSPARENT, CYAN, 8)
                 setOnClickListener { showTab(t) }
             }
             tabViews[t] = tv
-            tabs.addView(tv)
+            val tabLp = lp(0, wrap, 1f)
+            tabLp.leftMargin = dp(2)
+            tabLp.rightMargin = dp(2)
+            tabs.addView(tv, tabLp)
         }
         panel.addView(tabs)
 
         contentView = label("", 10f, Color.WHITE)
-        val scroll = ScrollView(this).apply {
+        contentScroll = ScrollView(this).apply {
             addView(contentView)
+            visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(130))
         }
-        panel.addView(scroll)
+        panel.addView(contentScroll)
 
         chatRow = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -233,7 +387,7 @@ class QuotexOverlayService : Service() {
         container.addView(panel)
         root = container
         windowManager.addView(container, params)
-        showTab(Tab.DETAILS)
+        refreshTabs()
         render(lastState)
     }
 
@@ -253,12 +407,24 @@ class QuotexOverlayService : Service() {
         updateLayout()
     }
 
+    private fun refreshTabs() {
+        for ((t, view) in tabViews) {
+            val selected = contentOpen && t == tab
+            view.setTextColor(if (selected) DARK else CYAN)
+            view.background = rounded(if (selected) CYAN else Color.TRANSPARENT, CYAN, 8)
+        }
+        contentScroll.visibility = if (contentOpen) View.VISIBLE else View.GONE
+        val chatOpen = contentOpen && tab == Tab.CHAT
+        chatRow.visibility = if (chatOpen) View.VISIBLE else View.GONE
+        if (!chatOpen) setWindowFocusable(false)
+        updateLayout()
+    }
+
     private fun showTab(newTab: Tab) {
+        contentOpen = !(contentOpen && tab == newTab)
         tab = newTab
-        for ((t, view) in tabViews) view.setTextColor(if (t == newTab) CYAN else MUTED)
-        chatRow.visibility = if (newTab == Tab.CHAT) View.VISIBLE else View.GONE
-        if (newTab != Tab.CHAT) setWindowFocusable(false)
-        if (newTab == Tab.HISTORY) loadHistory()
+        refreshTabs()
+        if (contentOpen && newTab == Tab.HISTORY) loadHistory()
         renderContent()
     }
 
@@ -268,7 +434,9 @@ class QuotexOverlayService : Service() {
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken, 0)
         input.setText("")
         chatText = "…"
-        showTab(Tab.CHAT)
+        tab = Tab.CHAT
+        contentOpen = true
+        refreshTabs()
         scope.launch {
             chatText = try {
                 withContext(Dispatchers.Default) { module.chat.answer(question) }
@@ -288,47 +456,218 @@ class QuotexOverlayService : Service() {
         AgentStatus.DATA_UNCERTAIN -> MUTED
     }
 
+    private fun toggleAuto() {
+        if (!autoOn) {
+            if (!JarvisAccessibilityService.isEnabled) {
+                autoStatus = "Pehle Settings > Accessibility me JARVIS on karo"
+                renderAuto()
+                return
+            }
+            autoOn = true
+            autoTaps = 0
+            lastAutoOpenMs = -1L
+            autoStatus = "Demo check ho raha hai..."
+        } else {
+            autoOn = false
+            autoStatus = ""
+        }
+        renderAuto()
+    }
+
+    private fun renderAuto() {
+        if (root == null) return
+        if (autoOn) {
+            autoBtn.text = "AUTO DEMO TRADE: ON ($autoTaps/$MAX_AUTO_TAPS)"
+            autoBtn.setTextColor(DARK)
+            autoBtn.background = rounded(GREEN, GREEN, 10)
+        } else {
+            autoBtn.text = "AUTO DEMO TRADE: OFF"
+            autoBtn.setTextColor(CYAN)
+            autoBtn.background = rounded(Color.TRANSPARENT, CYAN, 10)
+        }
+        autoStatusView.text = autoStatus
+        autoStatusView.visibility = if (autoStatus.isBlank()) View.GONE else View.VISIBLE
+    }
+
+    /** Fires one Buy/Sell tap per candle, inside the first 30% of it, using the guess that was made before the candle opened. */
+    private fun autoTick() {
+        if (!autoOn || root == null) return
+        val s = lastState
+        if (!s.monitorOn) return
+        val candleMs = module.coordinator.currentConfig().candleSeconds * 1000L
+        if (candleMs <= 0L) return
+        val now = System.currentTimeMillis()
+        val currentOpen = Math.floorDiv(now, candleMs) * candleMs
+        if (lastAutoOpenMs == currentOpen) return
+        if (now - currentOpen > (candleMs * ENTRY_WINDOW).toLong()) return
+        val g = (s.entryGuess ?: s.nextGuess)?.takeIf { it.forOpenMs == currentOpen } ?: return
+        val result = JarvisAccessibilityService.tradeTap(g.up)
+        if (result.ok) {
+            lastAutoOpenMs = currentOpen
+            autoTaps++
+            autoStatus = "\u2714 ${result.message} #$autoTaps"
+            if (autoTaps >= MAX_AUTO_TAPS) {
+                autoOn = false
+                autoStatus = "$MAX_AUTO_TAPS trades poore hue, auto band. Record dekho."
+            }
+        } else {
+            autoStatus = result.message
+            if (result.liveBlocked) autoOn = false
+        }
+        renderAuto()
+    }
+
+    private fun setHero(accent: Int, fill: Int, arrow: String, sub: String, bars: Int) {
+        heroCard.background = rounded(fill, accent, 14)
+        heroArrow.text = arrow
+        heroArrow.setTextColor(accent)
+        heroStrength.text = sub
+        heroStrength.setTextColor(accent)
+        for ((i, bar) in strengthBars.withIndex()) bar.background = if (i < bars) rounded(accent, accent, 3) else rounded(CARD, STROKE_DIM, 3)
+    }
+
     private fun render(state: QuotexUiState) {
         lastState = state
         if (root == null) return
         val agent = state.agent
         val report = agent?.report
         val nowMs = System.currentTimeMillis()
-
-        // Until the agent has run once there is nothing to judge: that is DATA UNCERTAIN, never a guess.
         val status = report?.status ?: AgentStatus.DATA_UNCERTAIN
-        val color = statusColor(status)
+
+        val tfSeconds = module.coordinator.currentConfig().candleSeconds
+        val candleMs = tfSeconds * 1000L
+        val remainingMs = CandleClock.remainingMs(nowMs, candleMs)
+        val elapsedMs = candleMs - remainingMs
+        val elapsedFraction = if (candleMs > 0) elapsedMs.toDouble() / candleMs else 1.0
+        val enterNow = state.entryGuess?.takeIf { elapsedFraction <= ENTRY_WINDOW }
+        val g = enterNow ?: state.nextGuess
+
+        assetView.text = "${state.asset ?: "ASSET —"}  ${CandleClock.label(tfSeconds)}  ${state.lastPrice?.toString() ?: ""}".trimEnd()
+
+        // ---- big direction card -------------------------------------------------------------------
+        val accent: Int
+        when {
+            !state.monitorOn -> {
+                accent = MUTED
+                setHero(MUTED, NEUTRAL_FILL, "◉ OFF", "Monitor band hai", 0)
+            }
+            state.screenStatus == ScreenStatus.NOT_DETECTED -> {
+                accent = MUTED
+                setHero(MUTED, NEUTRAL_FILL, "NO CHART", "Quotex ka chart screen pe kholo", 0)
+            }
+            g == null -> {
+                accent = AMBER
+                setHero(AMBER, NEUTRAL_FILL, "WAIT", "Candles jama ho rahi hain ${state.candleCount}/${QuickGuessEngine.MIN_CANDLES}", 0)
+            }
+            else -> {
+                accent = if (g.up) GREEN else RED
+                val bars = when (g.strength) { GuessStrength.WEAK -> 1; GuessStrength.MEDIUM -> 2; GuessStrength.STRONG -> 3 }
+                setHero(accent, if (g.up) UP_FILL else DOWN_FILL, "${g.arrow} ${g.label}", "${g.strength.name} guess", bars)
+            }
+        }
+
+        // ---- collapsed pill ------------------------------------------------------------------------
         pill.text = when {
             !state.monitorOn -> "◉ QUOTEX · OFF"
             state.screenStatus == ScreenStatus.NOT_DETECTED -> "⚪ NO CHART"
+            g != null -> "${g.arrow} ${g.label}  ${CandleClock.format(remainingMs)}"
             else -> "${status.emoji} ${status.label}"
         }
-        pill.setTextColor(if (!state.monitorOn) MUTED else color)
+        pill.setTextColor(if (!state.monitorOn) MUTED else if (g != null) accent else statusColor(status))
 
-        val tfSeconds = module.coordinator.currentConfig().candleSeconds
-        assetView.text = "${state.asset ?: "ASSET —"}  ${CandleClock.label(tfSeconds)}  ${state.lastPrice?.toString() ?: ""}".trimEnd()
-        decisionView.text = "${status.emoji} ${status.label}"
-        decisionView.setTextColor(color)
-
-        val detail = StringBuilder()
-        val candleMsNow = tfSeconds * 1000L
-        val remainingMs = CandleClock.remainingMs(nowMs, candleMsNow)
-        val elapsedFraction = if (candleMsNow > 0) 1.0 - remainingMs.toDouble() / candleMsNow else 1.0
-        val enterNow = state.entryGuess?.takeIf { elapsedFraction <= 0.3 }
-        val guessToShow = enterNow ?: state.nextGuess
-        if (guessToShow != null) {
-            detail.appendLine("QUICK GUESS: ${guessToShow.label} ${guessToShow.arrow} (${guessToShow.strength.name})")
-            detail.appendLine(
-                if (enterNow != null) "ENTER NOW \u2192 candle abhi khula, pehle 30% me hi lagao"
-                else "ENTER IN ${CandleClock.format(remainingMs)} \u2192 agli candle ke open pe lagao"
-            )
-            if (guessToShow.reasons.isNotEmpty()) detail.appendLine("WHY: ${guessToShow.reasons.joinToString(", ")}")
-            val rec = if (state.guessTotal > 0) "${state.guessHits}/${state.guessTotal} (${(state.guessHits * 100 / state.guessTotal)}%)" else "abhi data nahi"
-            detail.appendLine("GUESS RECORD: $rec. Andaza hai, signal nahi. Demo me hi.")
-            detail.appendLine("-----")
+        // ---- countdown -----------------------------------------------------------------------------
+        val chipColor: Int
+        when {
+            enterNow != null -> {
+                chipColor = GREEN
+                timerChip.text = "ENTER NOW"
+                timerView.text = CandleClock.format((candleMs * ENTRY_WINDOW).toLong() - elapsedMs)
+            }
+            g != null -> {
+                chipColor = AMBER
+                timerChip.text = "ENTER IN"
+                timerView.text = CandleClock.format(remainingMs)
+            }
+            else -> {
+                chipColor = MUTED
+                timerChip.text = "CANDLE"
+                timerView.text = CandleClock.format(remainingMs)
+            }
         }
-        if (report != null) {
-            // Section 30 body without its STATUS line (the big label above already is the status).
+        timerChip.setTextColor(chipColor)
+        timerChip.background = rounded(Color.TRANSPARENT, chipColor, 8)
+        progressFill.background = rounded(chipColor, chipColor, 4)
+        val frac = elapsedFraction.coerceIn(0.0, 1.0).toFloat()
+        (progressFill.layoutParams as LinearLayout.LayoutParams).weight = frac
+        (progressRest.layoutParams as LinearLayout.LayoutParams).weight = 1f - frac
+        progressFill.requestLayout()
+
+        // ---- three small status boxes --------------------------------------------------------------
+        val trendName = report?.trend?.name
+        statTrend.text = when (trendName) {
+            "STRONG_UP" -> "UP ⬆⬆"
+            "WEAK_UP" -> "UP ⬆"
+            "RANGE" -> "SIDE ↔"
+            "WEAK_DOWN" -> "DOWN ⬇"
+            "STRONG_DOWN" -> "DOWN ⬇⬇"
+            "UNSTABLE" -> "UNSTABLE"
+            else -> "—"
+        }
+        statTrend.setTextColor(when {
+            trendName?.endsWith("UP") == true -> GREEN
+            trendName?.endsWith("DOWN") == true -> RED
+            trendName == null -> MUTED
+            else -> AMBER
+        })
+        val dq = report?.dataQuality?.name
+        statData.text = dq ?: "—"
+        statData.setTextColor(when (dq) {
+            "EXCELLENT", "GOOD" -> GREEN
+            "FAIR" -> AMBER
+            "POOR" -> RED
+            else -> MUTED
+        })
+        if (state.guessTotal > 0) {
+            val pct = state.guessHits * 100 / state.guessTotal
+            statRecord.text = "${state.guessHits}/${state.guessTotal} · $pct%"
+            statRecord.setTextColor(if (pct >= (state.breakEven * 100).toInt()) GREEN else AMBER)
+        } else {
+            statRecord.text = "—"
+            statRecord.setTextColor(MUTED)
+        }
+
+        // ---- last candles --------------------------------------------------------------------------
+        val offset = candleDots.size - state.recentUp.size
+        for ((i, dot) in candleDots.withIndex()) {
+            val up = if (i >= offset) state.recentUp[i - offset] else null
+            dot.background = when (up) {
+                true -> rounded(GREEN, GREEN, 2)
+                false -> rounded(RED, RED, 2)
+                null -> rounded(CARD, STROKE_DIM, 2)
+            }
+        }
+
+        // ---- reasons + note ------------------------------------------------------------------------
+        whyBox.removeAllViews()
+        for (reason in g?.reasons.orEmpty()) {
+            val chip = label("• $reason", 10f, Color.WHITE).apply {
+                setPadding(dp(8), dp(3), dp(8), dp(3))
+                background = rounded(CARD, STROKE_DIM, 8)
+            }
+            val chipLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            chipLp.bottomMargin = dp(3)
+            whyBox.addView(chip, chipLp)
+        }
+        noteView.text = when {
+            state.risk?.paused == true -> "TRADING PAUSED — ${state.risk?.reason}"
+            dq == "POOR" -> "⚠ Data kharab hai, guess pe bharosa kam. Andaza hai, signal nahi."
+            else -> "Andaza hai, signal nahi. Demo me hi try karo."
+        }
+        noteView.setTextColor(if (dq == "POOR" || state.risk?.paused == true) AMBER else MUTED)
+
+        // ---- DETAILS tab text (the old full report) ------------------------------------------------
+        val detail = StringBuilder()
+        if (report != null && agent != null) {
             for (line in ExplanationEngine.overlayLines(report, state.asset ?: "ASSET —", tfSeconds).drop(1).dropLast(1)) detail.appendLine(line)
             detail.appendLine("DATA: ${report.dataQuality.name}")
             report.setupScore?.let { detail.appendLine("SETUP SCORE: $it/100 (strength, not a win probability)") }
@@ -341,15 +680,14 @@ class QuotexOverlayService : Service() {
             } else {
                 detail.appendLine(report.headlineReason.ifEmpty { "Conditions reviewed." })
             }
-            detail.appendLine("${CandleClock.label(tfSeconds)} CANDLE ${CandleClock.format(CandleClock.remainingMs(nowMs, agent.candleMs))} REMAINING (timing only)")
             detail.append("MODE: ${agent.mode.name.replace('_', ' ')}")
         } else {
             detail.append(state.message ?: "Collecting price history…")
         }
-        state.risk?.takeIf { it.paused }?.let { detail.append("\nTRADING PAUSED — ${it.reason}") }
         if (state.chartStatus.isNotBlank()) detail.append("\nCHART: ${state.chartStatus}")
         if (state.screenStatus != ScreenStatus.TRACKING && state.readerNote.isNotBlank()) detail.append("\nREADER: ${state.readerNote}")
-        detailView.text = detail.toString().trimEnd()
+        detailText = detail.toString().trimEnd()
+        renderAuto()
         renderContent()
     }
 
@@ -360,9 +698,9 @@ class QuotexOverlayService : Service() {
             Tab.DETAILS -> {
                 val agent = state.agent
                 if (agent == null) {
-                    state.message ?: "No analysis yet."
+                    detailText.ifBlank { state.message ?: "No analysis yet." }
                 } else {
-                    ExplanationEngine.explain(agent.report) + "\n\nHISTORICAL EVIDENCE: " + agent.evidence.summary
+                    detailText + "\n\n" + ExplanationEngine.explain(agent.report) + "\n\nHISTORICAL EVIDENCE: " + agent.evidence.summary
                 }
             }
             Tab.HISTORY -> historyText
@@ -444,7 +782,7 @@ class QuotexOverlayService : Service() {
     }
 
     companion object {
-        private const val PANEL_WIDTH_DP = 220
+        private const val PANEL_WIDTH_DP = 240
         private const val PILL_WIDTH_DP = 160
         private const val ACTION_SHOW = "com.jarvis.assistant.quotex.overlay.SHOW"
         private const val ACTION_HIDE = "com.jarvis.assistant.quotex.overlay.HIDE"
@@ -455,6 +793,16 @@ class QuotexOverlayService : Service() {
         private val AMBER = Color.parseColor("#FBBF24")
         private val BLUE = Color.parseColor("#60A5FA")
         private val RED = Color.parseColor("#F87171")
+        private val DARK = Color.parseColor("#0A0E14")
+        private val CARD = Color.parseColor("#1E293B")
+        private val STROKE_DIM = Color.parseColor("#334155")
+        private val NEUTRAL_FILL = Color.parseColor("#331E293B")
+        private val UP_FILL = Color.parseColor("#33166534")
+        private val DOWN_FILL = Color.parseColor("#337F1D1D")
+        /** A guess counts as "ENTER NOW" only during the first 30% of a candle. */
+        private const val ENTRY_WINDOW = 0.3
+        /** Safety cap: the auto switch turns itself off after this many taps in one run. */
+        private const val MAX_AUTO_TAPS = 20
 
         fun show(context: Context) {
             try {

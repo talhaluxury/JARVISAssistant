@@ -558,6 +558,7 @@ class QuotexCoordinator(
                 chartStatus = chartStatusText(),
                 nextGuess = guessesByOpen[nextOpenMs],
                 entryGuess = guessesByOpen[currentOpenMs],
+                recentUp = candles.takeLast(10).map { c -> c.close > c.open },
                 guessHits = guessHits, guessTotal = guessTotal
             )
         }

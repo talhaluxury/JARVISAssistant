@@ -10,6 +10,9 @@ import java.util.ArrayDeque
 import com.jarvis.assistant.hud.JarvisHudState
 import com.jarvis.assistant.hud.WallpaperEventBus
 
+/** Outcome of one automatic Buy/Sell tap attempt on the Quotex screen. [liveBlocked] = a LIVE account was seen, so nothing was tapped. */
+data class TradeTapResult(val ok: Boolean, val message: String, val liveBlocked: Boolean = false)
+
 /**
  * Lets JARVIS operate other apps on the user's behalf: tapping visible buttons,
  * typing into visible fields, going back/home, scrolling — the same things a
@@ -142,6 +145,8 @@ class JarvisAccessibilityService : AccessibilityService() {
     /**
      * JARVIS only ever observes the Quotex trading screen (section 33): it never taps, types or swipes there, so it can
      * never place or confirm a trade. Every input primitive below refuses while a Quotex window is in the foreground.
+     * The one exception is [tradeTapInternal]: an opt-in Buy/Sell tap that the user switches on from the overlay and that only
+     * runs when the screen shows a DEMO account.
      */
     private fun quotexInForeground(): Boolean {
         val pkg = try { rootInActiveWindow?.packageName?.toString() } catch (e: Exception) { null } ?: return false
@@ -358,6 +363,106 @@ class JarvisAccessibilityService : AccessibilityService() {
         return dispatchGesture(gesture, null, null)
     }
 
+    // ---- demo-only Buy/Sell tap (the single exception to "never taps Quotex") ------------------------------------
+
+    private enum class AccountMode { DEMO, LIVE, UNKNOWN }
+
+    private fun collectTopTexts(node: AccessibilityNodeInfo, maxTop: Double, out: MutableList<String>, depth: Int = 0) {
+        if (depth > 40) return
+        val r = android.graphics.Rect()
+        node.getBoundsInScreen(r)
+        if (r.top < maxTop) {
+            node.text?.toString()?.let { out.add(it) }
+            node.contentDescription?.toString()?.let { out.add(it) }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectTopTexts(child, maxTop, out, depth + 1)
+        }
+    }
+
+    /** Reads the account label in the top part of the Quotex screen. LIVE wins over DEMO; no label found = UNKNOWN (refuse). */
+    private fun accountMode(root: AccessibilityNodeInfo): AccountMode {
+        val texts = ArrayList<String>()
+        collectTopTexts(root, resources.displayMetrics.heightPixels * 0.30, texts)
+        val demo = Regex("\\bdemo\\b", RegexOption.IGNORE_CASE)
+        val live = Regex("\\b(live|real)\\b", RegexOption.IGNORE_CASE)
+        var sawDemo = false
+        var sawLive = false
+        for (t in texts) {
+            if (demo.containsMatchIn(t)) sawDemo = true
+            if (live.containsMatchIn(t)) sawLive = true
+        }
+        return when {
+            sawLive -> AccountMode.LIVE
+            sawDemo -> AccountMode.DEMO
+            else -> AccountMode.UNKNOWN
+        }
+    }
+
+    private fun findTradeButton(root: AccessibilityNodeInfo, labels: List<String>): AccessibilityNodeInfo? {
+        val minTop = resources.displayMetrics.heightPixels * 0.5
+        var best: AccessibilityNodeInfo? = null
+        fun walk(n: AccessibilityNodeInfo, depth: Int) {
+            if (depth > 40 || best != null) return
+            val names = listOfNotNull(n.text?.toString(), n.contentDescription?.toString()).map { it.trim() }
+            if (names.any { name -> labels.any { name.equals(it, ignoreCase = true) } }) {
+                val r = android.graphics.Rect()
+                n.getBoundsInScreen(r)
+                if (r.top > minTop) {
+                    best = n
+                    return
+                }
+            }
+            for (i in 0 until n.childCount) {
+                val child = n.getChild(i) ?: continue
+                walk(child, depth + 1)
+            }
+        }
+        walk(root, 0)
+        return best
+    }
+
+    private fun gestureTap(x: Float, y: Float): Boolean {
+        val path = android.graphics.Path().apply { moveTo(x, y) }
+        val gesture = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 60))
+            .build()
+        return dispatchGesture(gesture, null, null)
+    }
+
+    private fun clickTradeNode(node: AccessibilityNodeInfo): Boolean {
+        var target = node
+        var hops = 0
+        while (!target.isClickable && target.parent != null && hops < 8) {
+            target = target.parent
+            hops++
+        }
+        if (target.isClickable && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        val r = android.graphics.Rect()
+        node.getBoundsInScreen(r)
+        return gestureTap(r.exactCenterX(), r.exactCenterY())
+    }
+
+    /**
+     * Taps Buy (up) or Sell (down) on the Quotex trade panel, but ONLY when the account label at the top of the screen
+     * reads DEMO. A LIVE label, or no readable label at all, means nothing is tapped.
+     */
+    private fun tradeTapInternal(up: Boolean): TradeTapResult {
+        val root = try { rootInActiveWindow } catch (e: Exception) { null } ?: return TradeTapResult(false, "Screen nahi padh paya")
+        val pkg = root.packageName?.toString().orEmpty()
+        if (!pkg.contains("quotex", ignoreCase = true)) return TradeTapResult(false, "Quotex screen samne nahi hai")
+        when (accountMode(root)) {
+            AccountMode.LIVE -> return TradeTapResult(false, "LIVE account dikh raha hai: tap nahi kiya, auto band", liveBlocked = true)
+            AccountMode.UNKNOWN -> return TradeTapResult(false, "DEMO label nahi mila: tap nahi kiya")
+            AccountMode.DEMO -> {}
+        }
+        val labels = if (up) listOf("buy", "higher", "up", "call") else listOf("sell", "lower", "down", "put")
+        val node = findTradeButton(root, labels) ?: return TradeTapResult(false, "${if (up) "Buy" else "Sell"} button nahi mila")
+        return if (clickTradeNode(node)) TradeTapResult(true, "${if (up) "BUY" else "SELL"} tap ho gaya (demo)")
+        else TradeTapResult(false, "Tap fail hua")
+    }
+
     fun remoteBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
     fun remoteHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
     fun remoteRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
@@ -389,6 +494,10 @@ class JarvisAccessibilityService : AccessibilityService() {
         /** Immediate (non-queued) system navigation actions — no screen inspection needed for these. */
         /** Horizontal chart drag for loading Quotex history (see [chartPan] for the limits). */
         fun panChart(x1: Float, x2: Float, y: Float): Boolean = instance?.chartPan(x1, x2, y) ?: false
+
+        /** Demo-only automatic Buy/Sell tap; refuses on a LIVE or unreadable account. */
+        fun tradeTap(up: Boolean): TradeTapResult =
+            instance?.tradeTapInternal(up) ?: TradeTapResult(false, "Accessibility service band hai")
 
         fun pressBack(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_BACK) ?: false
         fun pressHome(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_HOME) ?: false

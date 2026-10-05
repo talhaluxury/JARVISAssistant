@@ -50,6 +50,8 @@ data class QuotexUiState(
     val nextGuess: com.jarvis.assistant.quotex.agent.QuickGuess? = null,
     /** The guess that was made for the candle that is forming right now (valid as an entry only for its first seconds). */
     val entryGuess: com.jarvis.assistant.quotex.agent.QuickGuess? = null,
+    /** Last up to 10 closed candles, oldest first: true = green, false = red (drawn as little coloured bars). */
+    val recentUp: List<Boolean> = emptyList(),
     val guessHits: Int = 0,
     val guessTotal: Int = 0
 )
