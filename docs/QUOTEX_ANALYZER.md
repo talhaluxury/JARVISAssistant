@@ -100,7 +100,7 @@ never looks ahead and doesn't overclaim on a random walk.
 
 ## This round: Risk Engine (section 25)
 
-**A discipline layer, not an execution layer.** JARVIS never places, prepares or confirms a real trade, so
+**A discipline layer.** The only automatic action is the opt-in AUTO DEMO TRADE switch (demo accounts only), so
 the risk engine can only ever pause *JARVIS's own displayed setups* - never your account, and never Quotex's
 own risk controls, which remain the real safeguard (use Quotex's daily-loss limit too).
 

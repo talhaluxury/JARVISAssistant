@@ -1,6 +1,6 @@
 # Quotex analysis assistant - pro upgrade (v8)
 
-Analysis only. No order placement, no Buy/Sell taps, no hidden interaction with Quotex. Nothing here predicts the next candle.
+Analysis plus an opt-in AUTO DEMO TRADE switch on the overlay: when you turn it on (Accessibility required), JARVIS taps Buy on an UP guess and Sell on a DOWN guess, once per candle, right after the candle opens. It only taps when the Quotex screen shows a DEMO account; a LIVE or unreadable account means no tap, and the switch turns itself off after 20 taps. Guesses are not predictions of the next candle.
 
 ## New (package `quotex/pro/`)
 - `FakeBreakoutDetector` - fake breakout / breakdown + 0-100 pattern quality. WIRED: a fake move against the setup (quality >= 60) => WAIT.

@@ -178,9 +178,9 @@ recomputed by the backtest from the restored rounds.
 # JARVIS Quotex Analyzer
 
 Same idea as WinGo, for a Quotex chart on your own screen: it reads the asset name and the live price from the chart,
-builds candles, runs a walk-forward ensemble, and answers in a small floating chat. **Analysis only.** It cannot place,
-prepare or confirm a trade (the existing `trading/QuotexModels.kt` boundary is kept, and the same automated test that
-guards WinGo now also scans the Quotex folder for tap/gesture/automation APIs).
+builds candles, runs a walk-forward ensemble, and answers in a small floating chat. **Analysis plus an opt-in AUTO DEMO TRADE switch.** With the switch on, the overlay asks the Accessibility service
+to tap Buy/Sell on a DEMO account only (the service refuses on LIVE or unreadable accounts). The automated test that guards
+WinGo also scans the Quotex folder and allows exactly this one call from `QuotexOverlayService.kt`.
 
 Open it from the radial menu → **QTX**, or say "JARVIS Quotex signal / why / accuracy / backtest".
 

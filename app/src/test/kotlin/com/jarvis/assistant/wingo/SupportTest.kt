@@ -190,6 +190,12 @@ class SupportTest {
                     text = text.replace(Regex("com\\.jarvis\\.assistant\\.accessibility\\.JarvisAccessibilityService\\.(panChart|isEnabled)"), "")
                         .replace(Regex("JarvisAccessibilityService\\.(panChart|isEnabled)"), "")
                 }
+                // Second allowed use: the opt-in AUTO DEMO TRADE switch on the Quotex overlay may import the service and call
+                // JarvisAccessibilityService.isEnabled / tradeTap. tradeTap itself refuses unless the screen shows a DEMO account.
+                if (module == "quotex" && file.name == "QuotexOverlayService.kt") {
+                    text = text.replace("import com.jarvis.assistant.accessibility.JarvisAccessibilityService", "")
+                        .replace(Regex("JarvisAccessibilityService\\.(tradeTap|isEnabled)"), "")
+                }
                 for (token in forbidden) if (text.contains(token)) offenders.add("${file.name}: $token")
             }
         }

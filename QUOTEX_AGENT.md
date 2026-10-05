@@ -1,7 +1,7 @@
 # Quotex Trading Intelligence Agent
 
-Analysis, alerts and journaling only. Nothing in this code places, prepares or confirms a trade, and it never
-asks for or stores Quotex credentials. Default mode is SIMULATION.
+Analysis, alerts and journaling, plus an opt-in AUTO DEMO TRADE switch on the overlay (demo accounts only, see below).
+It never asks for or stores Quotex credentials. Default mode is SIMULATION.
 
 Code lives in `app/src/main/kotlin/com/jarvis/assistant/quotex/agent/`.
 
@@ -58,7 +58,7 @@ into `NewsRiskFilter` yourself; without them news risk shows UNAVAILABLE), no or
 - State machine: new WAITING state (weak evidence). Risk engine: max trades/day, max trades/hour, max daily stake exposure
   (settings keys `max_trades_day`, `max_trades_hour`, `max_daily_exposure`, no UI sliders yet).
 - Dashboard: new MARKET REGIME panel (regime, session, news, strategies allowed by `RegimeGate`).
-- Accessibility service refuses tap/long-press/type/swipe while a window whose package contains "quotex" is in the foreground.
+- Accessibility service refuses tap/long-press/type/swipe while a window whose package contains "quotex" is in the foreground. The single exception is `tradeTap` (AUTO DEMO TRADE switch): it taps Buy/Sell only when the top of the Quotex screen reads DEMO, refuses on LIVE or an unreadable label, fires at most once per candle in its first 30%, and the switch turns off after 20 taps.
   (A browser tab showing Quotex cannot be detected this way.)
 - EMA100/200 were already used by EMA Structure; it now reads `series.ema100/ema200`.
 
