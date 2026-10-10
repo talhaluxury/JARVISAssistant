@@ -7,7 +7,7 @@ import com.jarvis.assistant.ai.ChatMessage
 data class AiVerdict(val call: String, val confidence: Int, val reason: String, val forOpenMs: Long)
 
 /**
- * Asks the configured AI for a second opinion on a STRONG local guess. The AI can only agree, disagree or say SKIP:
+ * Asks the configured AI for a second opinion on a local guess (any strength). The AI can only agree, disagree or say SKIP:
  * it never starts a trade by itself, so in the auto switch it can only VETO a tap, never cause one.
  */
 class QuickGuessAdvisor(private val ai: AiService) {

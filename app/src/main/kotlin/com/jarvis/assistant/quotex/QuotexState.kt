@@ -56,7 +56,9 @@ data class QuotexUiState(
     val lastClosedOpenMs: Long = 0L,
     val lastClosedUp: Boolean? = null,
     val guessHits: Int = 0,
-    val guessTotal: Int = 0
+    val guessTotal: Int = 0,
+    /** What the self-training layer has learned so far and how it scores against the plain vote engine. */
+    val learner: com.jarvis.assistant.quotex.agent.LearnerStats? = null
 )
 
 data class QuotexAnalytics(

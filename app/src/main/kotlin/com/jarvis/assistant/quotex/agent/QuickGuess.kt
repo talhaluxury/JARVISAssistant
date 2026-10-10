@@ -20,7 +20,11 @@ data class QuickGuess(
     val regime: String = "",
     val agreeing: Int = 0,
     val opposing: Int = 0,
-    val brief: String = ""
+    val brief: String = "",
+    /** Signed, regime-weighted vote per signal (key -> value); what the [GuessLearner] trains on. */
+    val features: Map<String, Double> = emptyMap(),
+    /** The learner's own probability that the next candle is green (null until it exists). Not a promise. */
+    val learnedUp: Double? = null
 ) {
     val label: String get() = if (up) "UP" else "DOWN"
     val arrow: String get() = if (up) "\u2B06" else "\u2B07"
@@ -36,15 +40,15 @@ object QuickGuessEngine {
     private const val STRONG_SCORE = 7.0
     private const val MEDIUM_SCORE = 3.5
 
-    private class Vote(val value: Double, val reason: String, val trend: Boolean)
+    private class Vote(val key: String, val value: Double, val reason: String, val trend: Boolean)
 
     fun guess(candles: List<Candle>, forOpenMs: Long): QuickGuess? {
         if (candles.size < MIN_CANDLES) return null
         val s = PriceSeries(candles.takeLast(200))
         val i = s.size - 1
         val votes = ArrayList<Vote>()
-        fun trendVote(v: Double, reason: String) { votes.add(Vote(v, reason, true)) }
-        fun reversionVote(v: Double, reason: String) { votes.add(Vote(v, reason, false)) }
+        fun trendVote(key: String, v: Double, reason: String) { votes.add(Vote(key, v, reason, true)) }
+        fun reversionVote(key: String, v: Double, reason: String) { votes.add(Vote(key, v, reason, false)) }
 
         // ---- regime: efficiency ratio of the last 20 closes (1 = straight line, 0 = pure chop) + ADX --------------
         var er = Double.NaN
@@ -66,21 +70,21 @@ object QuickGuessEngine {
         // ---- trend votes -------------------------------------------------------------------------------------------
         val e9 = s.ema9[i]; val e21 = s.ema21[i]
         if (!e9.isNaN() && !e21.isNaN() && s.size >= 21) {
-            if (e9 > e21) trendVote(2.0, "EMA9 > EMA21 (uptrend)") else if (e9 < e21) trendVote(-2.0, "EMA9 < EMA21 (downtrend)")
+            if (e9 > e21) trendVote("ema9_21", 2.0, "EMA9 > EMA21 (uptrend)") else if (e9 < e21) trendVote("ema9_21", -2.0, "EMA9 < EMA21 (downtrend)")
         }
         val e50 = s.ema50[i]
         if (s.size >= 50 && !e50.isNaN()) {
-            if (s.closes[i] > e50) trendVote(1.0, "price above EMA50") else if (s.closes[i] < e50) trendVote(-1.0, "price below EMA50")
+            if (s.closes[i] > e50) trendVote("ema50", 1.0, "price above EMA50") else if (s.closes[i] < e50) trendVote("ema50", -1.0, "price below EMA50")
         }
         if (s.size >= 35) {
             val line = s.macd.first[i]; val sig = s.macd.second[i]
             if (!line.isNaN() && !sig.isNaN()) {
-                if (line > sig) trendVote(1.0, "MACD bullish") else if (line < sig) trendVote(-1.0, "MACD bearish")
+                if (line > sig) trendVote("macd", 1.0, "MACD bullish") else if (line < sig) trendVote("macd", -1.0, "MACD bearish")
             }
         }
         if (s.size >= 3) {
             val last3 = (i - 2..i).map { s.up[it] }
-            if (last3.all { it }) trendVote(1.0, "3 green candles in a row") else if (last3.none { it }) trendVote(-1.0, "3 red candles in a row")
+            if (last3.all { it }) trendVote("three_candles", 1.0, "3 green candles in a row") else if (last3.none { it }) trendVote("three_candles", -1.0, "3 red candles in a row")
         }
         // Higher timeframe: blocks of 5 candles, close vs EMA8 of block closes.
         var htfNote = "n/a"
@@ -95,7 +99,7 @@ object QuickGuessEngine {
                 if (!m.isNaN() && last != m) {
                     htfUp = last > m
                     htfNote = if (last > m) "up" else "down"
-                    trendVote(if (last > m) 1.5 else -1.5, "bigger timeframe is $htfNote")
+                    trendVote("htf", if (last > m) 1.5 else -1.5, "bigger timeframe is $htfNote")
                 }
             }
         }
@@ -104,19 +108,19 @@ object QuickGuessEngine {
         val rsi = s.rsi14[i]
         if (!rsi.isNaN()) {
             when {
-                rsi >= 72 -> reversionVote(-1.5, "RSI ${rsi.toInt()} overbought")
-                rsi <= 28 -> reversionVote(1.5, "RSI ${rsi.toInt()} oversold")
+                rsi >= 72 -> reversionVote("rsi", -1.5, "RSI ${rsi.toInt()} overbought")
+                rsi <= 28 -> reversionVote("rsi", 1.5, "RSI ${rsi.toInt()} oversold")
             }
         }
         val pb = s.percentB[i]
         if (!pb.isNaN()) {
-            if (pb > 1.0) reversionVote(-1.0, "above upper Bollinger band") else if (pb < 0.0) reversionVote(1.0, "below lower Bollinger band")
+            if (pb > 1.0) reversionVote("bollinger", -1.0, "above upper Bollinger band") else if (pb < 0.0) reversionVote("bollinger", 1.0, "below lower Bollinger band")
         }
         if (s.size >= 20) {
             val k = s.stochastic.first[i]; val d = s.stochastic.second[i]
             if (!k.isNaN() && !d.isNaN()) {
-                if (k > 85 && k < d) reversionVote(-1.0, "stochastic turning down from high")
-                else if (k < 15 && k > d) reversionVote(1.0, "stochastic turning up from low")
+                if (k > 85 && k < d) reversionVote("stoch", -1.0, "stochastic turning down from high")
+                else if (k < 15 && k > d) reversionVote("stoch", 1.0, "stochastic turning up from low")
             }
         }
 
@@ -124,8 +128,8 @@ object QuickGuessEngine {
         for (p in PriceActionEngine.detect(s)) {
             val name = p.pattern.name.lowercase().replace('_', ' ')
             when (p.bias) {
-                PatternBias.BULLISH -> reversionVote(2.0, name)
-                PatternBias.BEARISH -> reversionVote(-2.0, name)
+                PatternBias.BULLISH -> reversionVote("pat_${p.pattern.name.lowercase()}", 2.0, name)
+                PatternBias.BEARISH -> reversionVote("pat_${p.pattern.name.lowercase()}", -2.0, name)
                 PatternBias.NEUTRAL -> {}
             }
         }
@@ -164,7 +168,9 @@ object QuickGuessEngine {
             appendLine("regime=$regime higher-timeframe=$htfNote")
             appendLine("local engine says: ${if (up) "UP" else "DOWN"} ${strength.name} (score ${"%.1f".format(score)}); reasons: ${top.joinToString(", ")}")
         }
-        return QuickGuess(up, strength, score, top, forOpenMs, regime, agreeing, opposing, brief)
+        val features = HashMap<String, Double>()
+        for (v in votes) features[v.key] = (features[v.key] ?: 0.0) + v.value * (if (v.trend) trendW else revW)
+        return QuickGuess(up, strength, score, top, forOpenMs, regime, agreeing, opposing, brief, features)
     }
 
     private fun fmt(v: Double): String = if (v.isNaN()) "n/a" else "%.5f".format(v)

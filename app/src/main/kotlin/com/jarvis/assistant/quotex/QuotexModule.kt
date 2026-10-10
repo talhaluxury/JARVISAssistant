@@ -45,7 +45,7 @@ class QuotexModule(context: Context, private val aiService: com.jarvis.assistant
     val settings: QuotexSettings by lazy { QuotexSettings(appContext) }
     val repository: QuotexCandleRepository by lazy { QuotexCandleRepository(database.candleDao()) }
     val journal: QuotexJournalRepository by lazy { QuotexJournalRepository(database.journalDao()) }
-    val coordinator: QuotexCoordinator by lazy { QuotexCoordinator(repository, settings, tradeJournal = journal, agentJournalStore = FileJournalStore(File(appContext.filesDir, "quotex_journal.tsv"))) }
+    val coordinator: QuotexCoordinator by lazy { QuotexCoordinator(repository, settings, tradeJournal = journal, agentJournalStore = FileJournalStore(File(appContext.filesDir, "quotex_journal.tsv")), learner = com.jarvis.assistant.quotex.agent.GuessLearner(com.jarvis.assistant.quotex.agent.FileLearnerStore(File(appContext.filesDir, "quotex_learner.txt")))) }
     val chat: QuotexChatController by lazy { QuotexChatController(coordinator, aiService?.let { com.jarvis.assistant.quotex.voice.QuotexAiAssistant(it) }) }
     val advisor: com.jarvis.assistant.quotex.agent.QuickGuessAdvisor? by lazy { aiService?.let { com.jarvis.assistant.quotex.agent.QuickGuessAdvisor(it) } }
     val controls: QuotexControls by lazy { QuotexControls(appContext) }

@@ -51,3 +51,10 @@ Not compiled or run in the authoring session (no Android toolchain there): push 
 - **Settings screen.** The full demo settings are now in Settings -> "Demo Trading (Paper)" and still in the Demo Trading screen's Settings tab (same composable, always in sync).
 - **New strategies** (on by default for new installs; existing installs can switch them on in the strategy list): Squeeze Breakout (Bollinger squeeze + close outside the previous band), VWAP (trend pullback / range stretch), Stochastic Reversal (range markets only, at the Bollinger band). In a range market a Stochastic Reversal vote now also satisfies the range filter, next to Support/Resistance rejection.
 - **Tests added.** `FullEngineScenarioTest` (whole engine over sideways, mixed, trending and shock markets: hourly/daily/cooldown/stake limits, money conservation, determinism, auto-off), `TradeHistoryTest`, `VwapActivityTest`, `ExtraStrategiesTest`.
+
+## Quotex quick guess: AI on every guess, alert, self-training
+- AI second opinion now runs on every guess (was STRONG only). Auto-tap rules are unchanged (STRONG + AI agree).
+- Vibrate + beep once per candle when a MEDIUM/STRONG guess is agreed by the AI (and, after 100 learned candles, by the learner).
+- `GuessLearner`: online logistic regression over the vote signals. Learns from every closed candle and replays stored history
+  (last 800 candles) on start; saved in `quotex_learner.txt`. The overlay shows its out-of-sample hit rate next to the plain engine's.
+  It may show no improvement: short candles are close to random. Not compiled in the authoring session.

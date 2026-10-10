@@ -63,7 +63,9 @@ class QuotexCoordinator(
     private val settings: QuotexSettings,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val tradeJournal: com.jarvis.assistant.quotex.data.QuotexJournalRepository? = null,
-    agentJournalStore: JournalStore = InMemoryJournalStore()
+    agentJournalStore: JournalStore = InMemoryJournalStore(),
+    /** Learns from every closed candle which quick-guess signals work on this asset (see [GuessLearner]). */
+    private val learner: com.jarvis.assistant.quotex.agent.GuessLearner = com.jarvis.assistant.quotex.agent.GuessLearner()
 ) {
     private val mutex = Mutex()
     private var config: QuotexConfig = settings.config()
@@ -237,6 +239,11 @@ class QuotexCoordinator(
         if (forAsset != null) {
             val stored = repository.latestAscending(forAsset, config.maxCandlesKept)
             candles.addAll(CandleRuns.contiguousTail(stored, config.candleMs, resumeGapCandles()))
+        }
+        if (candles.size > com.jarvis.assistant.quotex.agent.QuickGuessEngine.MIN_CANDLES) {
+            val history = candles.toList()
+            val scope = learnScope()
+            withContext(Dispatchers.Default) { learner.trainOnHistory(history, scope) }
         }
         rebuildEngineLocked()
         ready = true
@@ -561,7 +568,8 @@ class QuotexCoordinator(
                 recentUp = candles.takeLast(10).map { c -> c.close > c.open },
                 lastClosedOpenMs = candles.lastOrNull()?.openTimeMs ?: 0L,
                 lastClosedUp = candles.lastOrNull()?.let { c -> if (c.close == c.open) null else c.close > c.open },
-                guessHits = guessHits, guessTotal = guessTotal
+                guessHits = guessHits, guessTotal = guessTotal,
+                learner = learner.stats()
             )
         }
     }
@@ -571,6 +579,8 @@ class QuotexCoordinator(
     private var guessTotal = 0
 
     /** Builds the guess for the next candle from closed candles plus the still-forming one (using the live price). */
+    private fun learnScope(): String = "${asset ?: "?"}@${config.candleSeconds}"
+
     private fun refreshGuessesLocked() {
         val candleMs = config.candleMs
         val now = clock()
@@ -583,7 +593,9 @@ class QuotexCoordinator(
             val prev = closed.last().close
             closed + Candle(currentOpen, prev, maxOf(prev, price), minOf(prev, price), price)
         } else closed
-        com.jarvis.assistant.quotex.agent.QuickGuessEngine.guess(series, nextOpen)?.let { guessesByOpen[nextOpen] = it }
+        com.jarvis.assistant.quotex.agent.QuickGuessEngine.guess(series, nextOpen)?.let {
+            guessesByOpen[nextOpen] = it.copy(learnedUp = learner.predictUp(it.features))
+        }
         while (guessesByOpen.size > 8) guessesByOpen.remove(guessesByOpen.keys.first())
     }
 
@@ -593,6 +605,8 @@ class QuotexCoordinator(
         if (candle.close == candle.open) return
         guessTotal++
         if (g.up == (candle.close > candle.open)) guessHits++
+        learner.learn(g.features, g.up, candle.close > candle.open, candle.openTimeMs, learnScope())
+        learner.save()
     }
 
     private fun chartStatusText(): String = when {

@@ -75,6 +75,8 @@ class QuotexOverlayService : Service() {
     private val aiVerdicts = LinkedHashMap<Long, com.jarvis.assistant.quotex.agent.AiVerdict>()
     private var aiAskedFor = 0L
     private var aiInFlight = false
+    private var aiFailedFor = 0L
+    private var alertedFor = 0L
     private var lastAiRequestMs = 0L
     private lateinit var heroCard: LinearLayout
     private lateinit var heroArrow: TextView
@@ -591,11 +593,11 @@ class QuotexOverlayService : Service() {
         renderAuto()
     }
 
-    /** Asks the AI about a STRONG upcoming guess (one request per candle, one at a time, at most every 8 seconds). */
+    /** Asks the AI about every upcoming guess, WEAK included (one request per candle, one at a time, at most every 8 seconds). */
     private fun maybeAskAi(state: QuotexUiState) {
         val advisor = module.advisor
         val g = state.nextGuess
-        if (advisor == null || g == null || g.strength != com.jarvis.assistant.quotex.agent.GuessStrength.STRONG) return
+        if (advisor == null || g == null) return
         if (aiInFlight || aiAskedFor == g.forOpenMs || aiVerdicts.containsKey(g.forOpenMs)) return
         val now = System.currentTimeMillis()
         if (now - lastAiRequestMs < 8_000L) return
@@ -604,10 +606,24 @@ class QuotexOverlayService : Service() {
         lastAiRequestMs = now
         scope.launch {
             val verdict = try { advisor.verdict(g) } catch (e: Exception) { null }
-            if (verdict != null) aiVerdicts[g.forOpenMs] = verdict
+            if (verdict != null) aiVerdicts[g.forOpenMs] = verdict else aiFailedFor = g.forOpenMs
             while (aiVerdicts.size > 6) aiVerdicts.remove(aiVerdicts.keys.first())
             aiInFlight = false
         }
+    }
+
+    /** Short double vibration plus a beep: a MEDIUM or STRONG guess that the AI also agrees with is ready. */
+    private fun alertUser() {
+        try {
+            val vib = getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+            @Suppress("DEPRECATION")
+            vib?.vibrate(longArrayOf(0, 250, 120, 250), -1)
+        } catch (e: Exception) { }
+        try {
+            val tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 80)
+            tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 300)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ tone.release() }, 600)
+        } catch (e: Exception) { }
     }
 
     private fun setHero(accent: Int, fill: Int, arrow: String, sub: String, bars: Int) {
@@ -791,13 +807,36 @@ class QuotexOverlayService : Service() {
                 aiView.text = "AI: ${verdict.call} ${verdict.confidence}%" + (if (verdict.reason.isNotBlank()) " - ${verdict.reason}" else "") +
                     if (verdict.call == "SKIP") "" else if (agrees) "  (guess se agree)" else "  (guess se alag)"
                 aiView.setTextColor(if (verdict.call == "SKIP") AMBER else if (agrees) GREEN else RED)
+                if (agrees && shown.strength != GuessStrength.WEAK && learnerAgrees(shown, state) && alertedFor != shown.forOpenMs) {
+                    alertedFor = shown.forOpenMs
+                    alertUser()
+                }
             }
             aiInFlight -> { aiView.text = "AI: soch raha hai..."; aiView.setTextColor(AMBER) }
-            shown.strength != com.jarvis.assistant.quotex.agent.GuessStrength.STRONG -> { aiView.text = "AI: sirf STRONG guess par poochta hai"; aiView.setTextColor(MUTED) }
+            aiFailedFor == shown.forOpenMs -> { aiView.text = "AI: jawab nahi aaya (Settings me key aur internet check karo)"; aiView.setTextColor(RED) }
             else -> { aiView.text = "AI: pooch raha hun..."; aiView.setTextColor(MUTED) }
         }
+        trainLine(state)?.let { aiView.text = aiView.text.toString() + "\n" + it }
         renderAuto()
         renderContent()
+    }
+
+    /** Once the learner has seen enough candles, an alert also needs the learner to lean the same way as the guess. */
+    private fun learnerAgrees(g: com.jarvis.assistant.quotex.agent.QuickGuess, state: QuotexUiState): Boolean {
+        val p = g.learnedUp ?: return true
+        val n = state.learner?.samples ?: 0
+        if (n < com.jarvis.assistant.quotex.agent.GuessLearner.MIN_TRUSTED_SAMPLES) return true
+        return (p >= 0.5) == g.up && abs(p - 0.5) >= 0.03
+    }
+
+    /** One short line: how many candles it learned from and how its own calls scored against the plain vote engine. */
+    private fun trainLine(state: QuotexUiState): String? {
+        val st = state.learner ?: return null
+        if (st.samples == 0) return "SEEKHNA: abhi shuru, candles ka intezar"
+        val l = st.learnerHitPct?.let { "%.0f%%".format(it) } ?: "-"
+        val e = st.engineHitPct?.let { "%.0f%%".format(it) } ?: "-"
+        val note = if (st.samples < com.jarvis.assistant.quotex.agent.GuessLearner.MIN_TRUSTED_SAMPLES) " (abhi kam data)" else ""
+        return "SEEKHNA: ${st.samples} candles, apna hit $l, purana engine $e (akhri ${st.windowSize})$note"
     }
 
     private fun renderContent() {
